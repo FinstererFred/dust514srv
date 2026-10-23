@@ -1,0 +1,6 @@
+DUST 514 - local revival test server
+
+This is a private, non-commercial test server used to research the DUST 514 client protocol.
+DUST 514 and EVE Online are trademarks of CCP hf. This server is not affiliated with CCP or Sony.
+
+By continuing you acknowledge that this server is experimental and may lose all data at any time.

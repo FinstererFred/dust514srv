@@ -1,0 +1,14 @@
+# CCP's code and game data stay local: decompiled client, extracted archives, original game files.
+research/
+backup_0317/
+
+# Logs contain the PSN/RPCN ticket (account name) and full client logs.
+dust_server/logs/
+
+# Generated locally: dev TLS key/cert, Python 2.7 conda environment, caches.
+dust_server/certs/
+tools/py27/
+__pycache__/
+*.pyc
+*.pyo
+*.tmp

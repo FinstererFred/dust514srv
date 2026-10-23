@@ -1,0 +1,4 @@
+Local revival server - patch notes
+
+- Login through CREST root, DUST root, OAuth token and token decode
+- Documents are served by the local CDN

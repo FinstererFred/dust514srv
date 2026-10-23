@@ -1,0 +1,119 @@
+{
+  "motd": {
+    "dust": {
+      "href": "{BASE}/articles/71"
+    },
+    "eve": {
+      "href": "{BASE}/motd/"
+    },
+    "server": {
+      "href": "{BASE}/motd/"
+    }
+  },
+  "crestEndpoint": {
+    "href": "{BASE}/"
+  },
+  "corporationRoles": {
+    "href": "{BASE}/corporations/roles/"
+  },
+  "itemGroups": {
+    "href": "{BASE}/inventory/groups/"
+  },
+  "channels": {
+    "href": "{BASE}/chat/channels/"
+  },
+  "corporations": {
+    "href": "{BASE}/corporations/"
+  },
+  "alliances": {
+    "href": "{BASE}/alliances/"
+  },
+  "itemTypes": {
+    "href": "{BASE}/types/"
+  },
+  "decode": {
+    "href": "{BASE}/decode/"
+  },
+  "battleTheatres": {
+    "href": "{BASE}/battles/theatres/"
+  },
+  "marketPrices": {
+    "href": "{BASE}/market/prices/"
+  },
+  "itemCategories": {
+    "href": "{BASE}/inventory/categories/"
+  },
+  "regions": {
+    "href": "{BASE}/regions/"
+  },
+  "bloodlines": {
+    "href": "{BASE}/bloodlines/"
+  },
+  "marketGroups": {
+    "href": "{BASE}/market/groups/"
+  },
+  "sovereignty": {
+    "campaigns": {
+      "href": "{BASE}/sovereignty/campaigns/"
+    },
+    "structures": {
+      "href": "{BASE}/sovereignty/structures/"
+    }
+  },
+  "tournaments": {
+    "href": "{BASE}/tournaments/"
+  },
+  "map": {
+    "href": "{BASE}/map/"
+  },
+  "virtualGoodStore": {
+    "href": "{BASE}/"
+  },
+  "serverVersion": "EVE-TRANQUILITY 13.08.959531.959644",
+  "wars": {
+    "href": "{BASE}/wars/"
+  },
+  "incursions": {
+    "href": "{BASE}/incursions/"
+  },
+  "races": {
+    "href": "{BASE}/races/"
+  },
+  "authEndpoint": {
+    "href": "{BASE}/oauth/token/"
+  },
+  "serviceStatus": {
+    "dust": "online",
+    "eve": "online",
+    "server": "online"
+  },
+  "userCounts": {
+    "dust": 514,
+    "dust_str": "514",
+    "eve": 0,
+    "eve_str": "0"
+  },
+  "industry": {
+    "facilities": {
+      "href": "{BASE}/industry/facilities/"
+    },
+    "systems": {
+      "href": "{BASE}/industry/systems/"
+    }
+  },
+  "clients": {
+    "dust": {
+      "href": "{BASE}/roots/dust/"
+    },
+    "eve": {
+      "href": "{BASE}/roots/eve/"
+    }
+  },
+  "time": {
+    "href": "{BASE}/time/"
+  },
+  "marketTypes": {
+    "href": "{BASE}/market/types/"
+  },
+  "serverName": "TRANQUILITY"
+}
