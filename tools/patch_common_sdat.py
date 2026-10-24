@@ -8,9 +8,12 @@ The original archive is kept as COMMON.SDAT.orig and every run rebuilds from it.
 
     python tools/patch_common_sdat.py            # apply client_patch/*.py
     python tools/patch_common_sdat.py --restore  # put the original archive back
+
+DUST_GAME_DIR selects another installation, e.g. the second RPCS3 copy for the multiplayer test.
 """
 
 import argparse
+import os
 import shutil
 import subprocess
 import tempfile
@@ -18,7 +21,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-GAME_DIR = Path(r"D:\rpcs3\dev_hdd0\game\NPUB30643\USRDIR\DUSTGAME")
+GAME_DIR = Path(os.environ.get("DUST_GAME_DIR", r"D:\rpcs3\dev_hdd0\game\NPUB30643\USRDIR\DUSTGAME"))
 PATCH_DIR = ROOT / "client_patch"
 PY27 = ROOT / "tools" / "py27" / "python.exe"
 

@@ -3,9 +3,13 @@
 # logs\*_console.log) and, unless -ServerOnly, starts the game.
 #   .\restart_all.ps1 -Label vault_fix
 #   .\restart_all.ps1 -ServerOnly
+#   .\restart_all.ps1 -Monitor \\.\DISPLAY3 -Fullscreen
 param(
     [string]$Label = "run",
-    [switch]$ServerOnly
+    [switch]$ServerOnly,
+    [string]$Monitor = "\\.\DISPLAY1",
+    [switch]$Fullscreen,
+    [string]$GameArgs = ""
 )
 
 $root = Split-Path -Parent $PSScriptRoot
@@ -46,5 +50,5 @@ if (-not (Wait-Port 8080 20)) { throw "Server did not start, see $logs\server_er
 "offline service and server running (logs archived to $archive)"
 
 if (-not $ServerOnly) {
-    & (Join-Path $PSScriptRoot "start_dust.ps1")
+    & (Join-Path $PSScriptRoot "start_dust.ps1") -Monitor $Monitor -Fullscreen:$Fullscreen -GameArgs $GameArgs
 }

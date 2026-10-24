@@ -1,6 +1,6 @@
 {
-  "_comment": "Polled by client_patch/dustdevhook.py once the merc quarters are loaded; bump revision to run the commands again. Actions: ue3, init_battle_services, offline_battle_connect, mark_in_battle, notify, call ({\"service\",\"method\",\"args\"}), sleep. revision 0 = nothing. Current recipe: local Ambush on Craters BG01 (bfid = GalaxyLevel type id, gameModeLevel from its gameModes list), then open the deploy map; press Triangle (Smart Deploy) to spawn.",
-  "revision": 24,
+  "_comment": "Polled by client_patch/dustdevhook.py once the merc quarters are loaded; bump revision to run the commands again. Actions: ue3, init_battle_services, offline_battle_connect, mark_in_battle, notify, battle_member ({credential, characterID, characterURI, name, team}: lets a second client join this listen server), call ({\"service\",\"method\",\"args\"}), sleep. revision 0 = nothing. Current recipe: multiplayer host. Local Ambush on Craters BG01 as a UE3 listen server (?listen, UDP 7777), then the deploy map; press Triangle (Smart Deploy) to spawn. battle_member registers the second client (port 8081) with a fixed credential; it joins with dev_commands_8081.json. PlayerControllerClass=DustDevPlayerController enables dev console commands (SetCloneReservesForTeam, SpawnInstallationByType, SpawnByType, SpawnAI, ...).",
+  "revision": 42,
   "commands": [
     {
       "action": "sleep",
@@ -24,15 +24,29 @@
       }
     },
     {
+      "action": "battle_member",
+      "arg": {
+        "credential": "6dd9c18702db6271cdc247ca",
+        "characterID": 2100001612,
+        "characterURI": "http://127.0.0.1:8081/characters/2100001612/",
+        "name": "Mercenary Two",
+        "team": 1
+      }
+    },
+    {
       "action": "mark_in_battle"
     },
     {
       "action": "ue3",
-      "arg": "Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_AmbA?bfid=365271?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?Team=0?Name=DustPlayer"
+      "arg": "Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_AmbA?bfid=365271?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?listen?Team=0?Name=DustPlayer?PlayerControllerClass=DustGame.DustDevPlayerController"
     },
     {
       "action": "sleep",
       "arg": 8
+    },
+    {
+      "action": "ue3",
+      "arg": "PauseStageTimer"
     },
     {
       "action": "call",

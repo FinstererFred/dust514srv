@@ -1,13 +1,16 @@
 """Sets the size of one file in DUST 514's PS3TOC.TXT to the file's actual size (byte-exact, CRLF kept).
 
     python tools/set_toc_size.py Movies/Intro.bik
+
+DUST_GAME_DIR selects another installation, e.g. the second RPCS3 copy for the multiplayer test.
 """
 
+import os
 import re
 import sys
 from pathlib import Path
 
-GAME_DIR = Path(r"D:\rpcs3\dev_hdd0\game\NPUB30643\USRDIR\DUSTGAME")
+GAME_DIR = Path(os.environ.get("DUST_GAME_DIR", r"D:\rpcs3\dev_hdd0\game\NPUB30643\USRDIR\DUSTGAME"))
 
 
 def main():

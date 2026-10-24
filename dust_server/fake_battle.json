@@ -2,7 +2,7 @@
   "_comment": "Experiment 1 (docs/battle_feasibility.md): one fake battle in the battle finder. Read on every request, so edits apply without a restart. variant 'probe' = connect to target_probe (UDP logger in listen_server.py), 'localmap' = CleanLoad a local map. The client builds 'CleanLoad <address>:<port>?credential=...', so the localmap address ends with a dummy option that swallows ':<port>'.",
   "enabled": false,
   "variant": "localmap",
-  "target_probe": {"address": "127.0.0.1", "port": 7777},
+  "target_probe": {"address": "127.0.0.1", "port": 17777},
   "target_localmap": {"address": "MN_Craters01_BG01_AmbA?gametype=gamemode_ambush_32p?dummy", "port": 1},
   "battle_id": 514001,
   "name": "LocalTest",

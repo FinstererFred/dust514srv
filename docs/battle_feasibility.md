@@ -26,6 +26,10 @@ nicht ausgewertet. Was nur dort entschieden wird, ist unten als **offen** markie
    an. Beim Beitritt schickt er `OnBattleMemberJoined` und dann `OnBattleMemberConnect`, wobei als
    „Serveradresse“ ein **lokaler Kartenname** eingesetzt wird. Damit testen wir die ganze Kette bis
    `CleanLoad` und sehen, ob die PS3-Engine die Karte lokal lädt (Details in Abschnitt 5).
+6. **Stand 2026-10-24 (Experiment 9):** Mehrspieler funktioniert grundsätzlich. Ein Client hostet die Ambush-Karte
+   per `?listen`, ein zweiter (zweite RPCS3-Instanz mit lokalem RPCN-Server) tritt mit einer Credential bei, die der
+   Host per Dev-Befehl registriert hat. Danach spawnt er im gegnerischen Team. Offen ist, dass der Host-Spieler
+   nach dem Beitritt nicht mehr spawnt.
 
 ---
 
@@ -410,14 +414,167 @@ Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_
 - Gegner fehlen noch: `EnableCheats`, `AddAI`, `AddAIAttacker`, `SpawnBots 4`, `SetNumBots 4` bewirkten nichts
   (Verteidiger bleiben bei 0 Spielern). `SetMinPlayersPerTeam 0` und `SkipForceComposition` ebenfalls ohne Wirkung.
 
+Nachtrag: Die Lichtartefakte (gestrichelte helle Bänder auf Böden und Rampen, seltsame Wolken bzw. Nebel) treten
+auch mit `Write Color Buffers` weiter auf. Die Ursache ist noch offen.
+
+### Ergebnis Experiment 5: Dev-Controller und Gegner (2026-10-24)
+
+Analyse von `DUSTGAME.XXX` mit eigenen Lesern für Namen, Exporte, Importe und Funktionsflags
+(`research/tools_local/upk.py`, `execs.py`, nicht im Repo). Nach dem Bytecode-Ende `0x53` folgen iNative (2 Byte),
+Präzedenz (1 Byte), FunctionFlags (4 Byte) und bei Netz-Funktionen RepOffset (2 Byte). `FUNC_Exec` = 0x200.
+
+- `DustTeamGame.GetPlayerControllerClassFromOption` liest **`?PlayerControllerClass=`**. Mit
+  `?PlayerControllerClass=DustGame.DustDevPlayerController` bekommt der Spieler den Entwickler-Controller.
+- Konsolenbefehle über `Util.ExecConsoleCommand` erreichen den PlayerController (`Suicide` wirkt). Mit dem
+  Dev-Controller wirken dessen Exec-Funktionen, z. B. `SetCloneReservesForTeam 777 0` (HUD zeigt 777). Liste
+  u. a.: `SpawnAI(npcID, teamNum)`, `SpawnByType(typeName, isEnemy, SpawnDistance, …)`,
+  `SpawnInstallationByType(typeName, SpawnDistance, Team)`, `SetCloneReservesForTeam`, `SetMinPlayersPerTeam`,
+  `SwitchTeam`, `TeleportToSpawnPoint`, `StartWaveNow`/`GotoNextWave` (Survival), `IgnorePlayableArea`.
+  `DustCheatManager` (`CreateGame`, `CG`, `SimpleCreateGame`, …) ist im Release-Build nicht erreichbar.
+- **Gegner-Objekte entstehen:** `SpawnInstallationByType inst_dronehive_smallhunter_all 2000 1` setzt ein
+  Drohnen-Nest (Team 1) vor den Spieler, mit Feind-Markierung im HUD. Es nimmt Schaden (Zielinfo „Armor 4595“).
+  `SpawnByType drone_medium_grey 1 1500` erzeugt einen Drohnen-Pawn (UE3 fragt dafür die Slots von 355207 bei
+  Python ab). Beide sind bisher **passiv**: keine Angriffe, keine Drohnenwellen im Ambush-Modus.
+- `SpawnAI <npcID> <team>` (npcID = `DustNPCDefinition` aus der DB, z. B. 355316 `qa_npc_01` „QA Drone –
+  Standard Assault“ oder 355354 `drone_hunter_medium_assaultrifle`) erzeugt nichts. Keine einzige Karte enthält
+  KI-Spawnpunkte (`DustAISpawnPoint`), nur `DustTeamPlayerStart` in den Outposts.
+- `DustSvcAutobot.SpawnBots` wird nur aus `DustDevPlayerController.SpawnAutoBots` aufgerufen. Das ist ein
+  Server-Event, kein Konsolenbefehl, und sonst ruft es niemand auf.
+- `DustTeamGame.Login` vergibt Offline-Charakter-IDs (`GetNextOfflineCharID`). Mehrere menschliche Spieler über
+  `?listen` sind im Offline-Modus also vorgesehen (Weg b).
+- Tastenbelegung im Gefecht: Feuern = R1 (`E`), Smart Deploy = Triangle (`V`), Karte schließen = Circle (`C`).
+
+### Ergebnis Experiment 6: Survival-Modus (2026-10-24)
+
+- `gamemode_survival_infestation_1p` startet auf Craters (`gameModeLevel`/`bfid` wie beim Ambush). Die
+  Deploy-Karte öffnet sich von selbst, die Figur deployt automatisch, Clones 12 : 99999.
+- Nach etwa 21 s endet das Match mit **„VICTORY“**: Jede Welle setzt ihre Nester an Kartenmarkierungen
+  (`m_DroneHiveSpawnTag` = `wave0`, `wave1_1` …). Die gibt es in keiner ausgelieferten Karte (Scan aller PSARCs),
+  also sind die Wellen leer und gelten als geschafft. `PauseStageTimer` und von Hand gesetzte Nester
+  (`SpawnInstallationByType inst_drone1p_wave_1 …`) ändern daran nichts.
+- Die Survival-/Drohnen-Modi waren nach Erinnerung des Nutzers und nach Datenlage (Karten `testmap_Infest…` nie
+  ausgeliefert) nie öffentlich spielbar. Ausgeliefert waren Ambush (Team-Deathmatch), Skirmish und Domination.
+  **Bots als Gegner gab es in DUST nicht.** Der naheliegende Weg zu echten Gefechten ist daher Mehrspieler
+  (Weg b: `?listen`, Offline-Charaktere über `DustTeamGame.Login`/`GetNextOfflineCharID`).
+- Noch ungetestete Idee für Übungsgegner: Die CATMA-Datenbank liegt im Python-Speicher des Clients. Würde man
+  vor dem Kartenstart die Wellen-Tags auf vorhandene Actor-Tags umbiegen (Actor-Tag = Klassenname, z. B.
+  `DustWorldCenter` in der Spielmodus-Ebene), könnten die Wellen echte Nester spawnen. Ob UE3 die Werte zur
+  Laufzeit aus Python liest, ist offen.
+
+### Ergebnis Experiment 7: Startargumente und Benchmark-Modus (2026-10-24)
+
+- RPCS3 reicht Argumente ans Spiel durch, wenn sie hinter der EBOOT nach `--` stehen:
+  `rpcs3.exe --no-gui EBOOT.BIN -- -benchmarktest …`. Steht `--` vor der EBOOT, stürzt RPCS3 ab („Range check
+  failed“), ohne `--` wertet RPCS3 die Schalter selbst aus („Unknown options“). Im TTY-Log erscheinen sie als
+  `CommandLine: …`, in Python als `sys.argv`. `tools/start_dust.ps1` und `restart_all.ps1` haben dafür `-GameArgs`.
+- `-benchmark` ist UE3s Standard-Schalter und ändert am Ablauf nichts. **`-benchmarktest`** schaltet Dusts
+  Benchmark-Testclient ein (`GIsBenchmarkTest`): Er lädt die Söldnerunterkunft sofort ohne Charakterauswahl, mehrere
+  Python-Dienste scheitern ohne Charakter, und der Client meldet „disconnected because of an internal error“.
+- Die vier Benchmark-Fälle der DB (`bt_benchmark_test_01`, `…_tgtrace`, `…_stress`) bestehen aus Warte-,
+  Prüf- und Konsolenschritten (`EnterBenchmarkTestBattle`, `ForceSpawnAtPlayerStartWithTag benchmark`, `shot`,
+  `LoadMercQuarters`, `QuitBenchmarkTestBattle`). Der Schritt `SpawnAIPlayers1` (8 KI je Seite) kommt in keinem Fall
+  vor. Der Benchmark-Modus ist damit kein Weg zu Bots.
+- Bot-Code im Spiel, Stand jetzt: `DustDevPlayerController.SpawnAI` (keine KI-Spawnpunkte in den Karten),
+  `DustSvcAutobot.SpawnBots` (nur über ein Server-Event erreichbar), `DustBenchmarkTestStepSpawnAIPlayers` (in keinem
+  Benchmark-Fall). Für die nativen Teile davon ist die EBOOT-Analyse mit Ghidra der nächste Schritt.
+- Vollbild: `restart_all.ps1 -Monitor \\.\DISPLAY3 -Fullscreen` startet RPCS3 mit `--fullscreen --game-screen <n>`.
+  RPCS3 zählt den Hauptmonitor als 0, dann die übrigen in Windows-Reihenfolge. Das Skript läuft DPI-bewusst.
+
+### Ergebnis Experiment 8: native Bot-Funktionen (2026-10-24)
+
+Werkzeuge (alle unter `research/`, nicht im Repo): Ghidra 12.1.4 headless (`research/ghidra/dust514_eboot`,
+Analyse 2 h 20 min, Skript `scripts/DumpDust.java` zum Dekompilieren), eigene Leser für die Native-Tabelle
+(`tools_local/native_table.py`: 3578 Einträge `{UTF-16-Name, Funktionsdeskriptor, 0}`, TOC `r2 = 0x1c8a420`), Capstone
+und ein RPCS3-Speicherabzug (Utilities → Dump Guest Memory, `tools_local/memdump.py`).
+
+- Die Exec-Stücke lesen nur die Parameter und rufen virtuell weiter: `execServerSpawnAI` → vtable `+0x654`,
+  `execSpawnBots` → `+0x164`, `execFindAISpawnPoint` → `+0x47c`, `execAddAI` (DustSpawner) → `+0x3f0`.
+- Statisch ließen sich die vtables nicht zuordnen (keine RTTI, und Ghidra legt für `lis`/`addi`-Konstanten keine
+  Referenzen an). Haltepunkte im RPCS3-Debugger greifen mit dem LLVM-Recompiler nicht.
+- Gelöst über den Speicherabzug: UE3-Namenseinträge (`FNameEntry`: Index·2, HashNext, Name) liefern den Namensindex.
+  Objekte tragen den Namen bei `+0x2c` und die Klasse bei `+0x34`, der vtable-Zeiger steht bei `+0`. Default-Objekte
+  (`Default__Klasse`) liefern die vtable jeder Klasse, auch ohne Instanz auf der Karte.
+
+| Funktion | vtable | Slot → Code | Inhalt |
+|---|---|---|---|
+| `DustDevPlayerController.ServerSpawnAI` | `0x19683f0` | `+0x654` → `0x20980` | leer (`blr`) |
+| `DustSvcAutobot.SpawnBots` | `0x196ffe0` | `+0x164` → `0x20980` | leer (`blr`) |
+| `DustSvcAutobot.IsActive` | `0x196ffe0` | `+0x17c` → `0x75fc8c` | liefert nur ein globales Flag |
+| `DustSkirmishGame.FindAISpawnPoint` | `0x196f520` | `+0x47c` → `0x26ec0` | `return 0` |
+| `DustSpawner.AddAI` | `0x1980da0` | `+0x3f0` → `0x26ec0` | `return 0` |
+
+**Ergebnis:** Im Release-Build ist die gesamte KI-Spawn-Logik herauskompiliert. Die Funktionen existieren nur als
+leere Stubs. Damit sind Bots über Konsolenbefehle oder Startargumente nicht erreichbar. Die passiven Drohnen-Nester
+erklärt das ebenfalls, denn sie erzeugen Drohnen über `DustSpawner.AddAI`. Gegner gibt es realistisch nur über
+Mehrspieler (Weg b). Bots selbst zu bauen hieße, KI-Code per EBOOT-Patch nachzurüsten, und das ist nicht machbar.
+
 Nächste Schritte:
-1. Gegner: herausfinden, ob Cheats im Release-Build aktivierbar sind (`AllowCheats`, `AddCheats`) bzw. wie
+1. Gegner: Drohnen aktiv machen (Survival-Modus `gamemode_survival*` mit `StartWaveNow`/`GotoNextWave` auf
+   einer vollständigen Karte, selbst gesetzte Nester per `SpawnInstallationByType`), oder herausfinden, ob Cheats im Release-Build aktivierbar sind (`AllowCheats`, `AddCheats`) bzw. wie
    `DustSvcAutobot.SpawnAutoBots`/`ADustDevPlayerController.ServerSpawnAI` erreichbar sind, oder ein zweiter Client
    per `?listen` (Weg b, Port 7777).
 2. Kartenwahl aus der Spieldatenbank ableiten (`GalaxyLevel` → `mapName`, `gameModes[].mapName`, `terraforming`,
    `moods`) und als Gefechtsliste im CREST-Server anbieten, sodass der normale Beitrittsweg (Experiment 1) den
    Start-Befehl auslöst statt `dev_commands.json`.
 3. Match-Ende, Belohnungen und Rückkehr in die Söldnerunterkunft testen.
+
+### Ergebnis Experiment 9: Mehrspieler mit zwei RPCS3-Instanzen (2026-10-24)
+
+Aufbau auf einem Rechner:
+
+| | Host | Client 2 |
+|---|---|---|
+| RPCS3 | `D:\rpcs3` | Kopie `D:\rpcs3_b` (6,2 GB, ohne Logs und Speicherabzüge) |
+| CREST | Port 8080, `dev_commands.json` | Port 8081 (`SAKE.INI`), `dev_commands_8081.json` |
+| Anmeldung | PSN über RPCN (eigenes Konto) | Dev-Autologin `-autologinserver=127.0.0.1:8081`, dazu NP über einen **lokalen RPCN-Server** mit Testkonto |
+| Netz | Bind-Adresse `0.0.0.0` | Bind-Adresse `127.0.0.2` |
+| Rolle | Listen-Server: Ambush-Rezept plus `?listen` (UDP 7777) | `CleanLoad 127.0.0.1:7777?credential=…?Team=1` |
+
+Hürden und Lösungen:
+- **PSN-Pflicht beim Start:** Mit PSN-Status „Disconnected“ bleibt Client 2 schon im nativen Startcode bei
+  „Connection to PlayStation Network was lost“ hängen, also vor Python. Dasselbe RPCN-Konto zweimal geht nicht,
+  weil RPCN eine zweite gleichzeitige Anmeldung ablehnt. Lösung: der quelloffene RPCN-Server 1.12.1
+  (`research/rpcn/`, nur `127.0.0.1:31313`) mit einem lokalen Testkonto. Angelegt wurde es mit
+  `research/rpcn/create_account.py` (Protokoll 34, Befehl `Create`). Nur die Kopie zeigt darauf; das echte Konto des
+  Hosts bleibt unberührt.
+- **Portkonflikt:** Beide Instanzen binden den P2P-Port UDP 3658 (RPCS3-Absturz „Failed to bind DGRAM socket to
+  3658“). Lösung: In der Kopie steht `Net → Bind address: 127.0.0.2`.
+- **UDP 7777:** Der Probe-Logger aus Experiment 1 belegte den Port. Er liegt jetzt auf 17777.
+- **Credential-Prüfung des Hosts:** Beim Beitritt ruft der Host
+  `BattleServer::GetDustCharacterURIFromCredential(credential)` auf. Unbekannte Credentials führen zum Abweisen
+  („Your connection to the host has been lost“). Ohne `?credential=` stürzt der Python-Aufruf mit einem `TypeError`
+  ab. Lösung: neue Dev-Hook-Aktion `battle_member`. Sie legt auf dem Host einen `BattleCharacterCache` mit
+  fester Credential, Team und Charakter-ID an, so wie `_MemberJoinedBattle` es bei einer Backend-Notification tut.
+  Client 2 tritt danach über `dustUnreal.OnProceedBattleConnectNotification` mit derselben Credential bei.
+- **Vollbild hing:** Im Vollbild blieb der Host beim Hinweis „Precompiling shader interpreter variants“ stehen,
+  obwohl das Spiel dahinter lief. Im Fenstermodus trat das nicht auf.
+
+Ergebnis:
+- Client 2 lädt die Host-Karte. Beide Deploy-Karten zeigen je einen Spieler pro Team (Blau 1, Rot 1).
+- Client 2 spawnt per Smart Deploy und steht im Spiel. Der Host bestätigt den Spawn per
+  `OnSpawnCharacterConfirmedNotification` (Bild `battle_mp_client2_ingame.png`).
+- `PauseStageTimer` hält den Missions-Timer an. Ohne ihn endete das erste Match nach rund 16 Minuten mit
+  „DEFEAT – Mission timer expired“.
+- **Offen:** Nach dem Beitritt spawnt der Host-Spieler selbst nicht mehr, seine Ansicht bleibt in der
+  Übersichtskamera (`battle_mp_host_stuck.png`). Im Battle-Server kommt nur ein einziges
+  `SpawnCharacterWithFitting` an, und zwar für die ID 2100001611, die Client 2 erhalten hat. Vermutlich bekommen
+  beide Spieler dieselbe Offline-ID (`GetNextOfflineCharID`), sodass die Anfrage des Hosts verloren geht.
+  Nächster Schritt: Host zuerst spawnen lassen, dann Client 2 beitreten lassen, oder die ID-Vergabe in
+  `DustTeamGame.Login` untersuchen.
+
+Ablauf zum Nachstellen:
+1. Server neu starten (Ports 8080 und 8081, Probe 17777), danach den lokalen RPCN-Server starten
+   (`research/rpcn/rpcn.exe`).
+2. Host: `tools/start_dust.ps1 -Monitor \\.\DISPLAY3 -Width 1600 -Height 900`. Das Rezept in `dev_commands.json`
+   registriert per `battle_member` den Mitspieler und startet die Karte mit `?listen`.
+3. Client 2:
+   `tools/start_dust.ps1 -Rpcs3 D:\rpcs3_b\rpcs3.exe -GameArgs "-autologinserver=127.0.0.1:8081 -autologinusername=dust2"`.
+   Sobald die Merc Quarters geladen sind, die `revision` in `dev_commands_8081.json` erhöhen.
+4. Nach Änderungen an `client_patch/` beide Installationen patchen: `tools/patch_common_sdat.py` und
+   `tools/set_toc_size.py COMMON.SDAT`, für die Kopie mit `DUST_GAME_DIR=D:\rpcs3_b\…\DUSTGAME`.
+
+Für einen zweiten PC gilt dasselbe. Statt 127.0.0.1 trägt man dann die LAN-Adresse des Hosts ein (CREST-URL in
+`SAKE.INI` bzw. `-autologinserver`, Ziel des `CleanLoad`). Mit einem eigenen RPCN-Konto entfällt der lokale RPCN-Server.
 
 ### Parallel: EBOOT-Analyse mit Ghidra (in Absprache)
 

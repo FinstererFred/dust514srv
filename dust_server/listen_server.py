@@ -197,10 +197,12 @@ class ClientLogHandler(socketserver.BaseRequestHandler):
         data, _ = self.request
         line = data.decode("utf-8", "replace").rstrip("\n")
         stamp = datetime.datetime.now().isoformat(timespec="milliseconds")
+        # The sender port tells two clients on this machine apart.
+        peer = self.client_address[1]
         with _log_lock:
-            print(f"[client] {line}", flush=True)
+            print(f"[client {peer}] {line}", flush=True)
             with open(LOG_DIR / "client.log", "a", encoding="utf-8") as f:
-                f.write(f"{stamp} {line}\n")
+                f.write(f"{stamp} [{peer}] {line}\n")
 
 
 class BattleProbeHandler(socketserver.BaseRequestHandler):
@@ -218,9 +220,11 @@ class BattleProbeHandler(socketserver.BaseRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--ports", default="80,443,8080", help="comma-separated list of ports")
+    parser.add_argument("--ports", default="80,443,8080,8081",
+                        help="comma-separated list of ports (8081: second client, dev commands from dev_commands_8081.json)")
     parser.add_argument("--client-log-port", type=int, default=8514, help="UDP port for client log lines")
-    parser.add_argument("--battle-probe-port", type=int, default=7777, help="UDP port logged as a fake battle server")
+    parser.add_argument("--battle-probe-port", type=int, default=17777,
+                        help="UDP port logged as a fake battle server (not 7777, which a listen server needs)")
     args = parser.parse_args()
 
     LOG_DIR.mkdir(exist_ok=True)

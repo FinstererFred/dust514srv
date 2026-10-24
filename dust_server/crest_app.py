@@ -425,15 +425,17 @@ def leave_battle(req):
     return {}
 
 
-DEV_COMMANDS = Path(__file__).resolve().parent / "dev_commands.json"
+DEV_COMMANDS_DIR = Path(__file__).resolve().parent
 
 
 @route("GET", r"^/dev/commands/$")
 def dev_commands(req):
     # Polled by client_patch/dustdevhook.py; the client runs the commands once per new revision.
-    if not DEV_COMMANDS.exists():
+    # A second client talks to port 8081 (multiplayer test) and gets dev_commands_8081.json.
+    path = DEV_COMMANDS_DIR / ("dev_commands_8081.json" if req["base"].endswith(":8081") else "dev_commands.json")
+    if not path.exists():
         return {"revision": 0, "commands": []}
-    return json.loads(DEV_COMMANDS.read_text(encoding="utf-8"))
+    return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def parse_body(headers, body):

@@ -29,6 +29,27 @@ def _Notify(svc, arg):
     svc.notificationShared.SendLocalNotification(arg)
 
 
+def _BattleMember(svc, arg):
+    # Registers a joining player with this client's battle server (listen server host), the way
+    # battleServer._MemberJoinedBattle does for the backend's member notification, but without CREST
+    # lookups. The joining client then connects with CleanLoad <host>:7777?credential=<credential>.
+    # {"credential": "...", "characterID": 2100001612, "characterURI": "...", "name": "...", "team": 1}
+    from dust.battleServer import BattleCharacterCache
+    character = BattleCharacterCache()
+    character.credential = arg['credential']
+    character.teamID = arg.get('team', 1)
+    character.characterName = arg.get('name', 'Mercenary')
+    character.raceID = arg.get('raceID', 4)
+    character.corporationID = arg.get('corporationID', 1000205)
+    character.corporationName = arg.get('corporationName', 'Amarr Templars')
+    character.characterURI = arg['characterURI']
+    character.portraitURI = arg.get('portraitURI', '')
+    character.gender = str(arg.get('gender', 1))
+    character.characterID = arg['characterID']
+    character.vipLevel = 0
+    svc.app.GetService('battleServer').characterCaches[arg['characterURI']] = character
+
+
 def _Call(svc, arg):
     # {"service": "dustClient", "method": "ForceRespawn", "args": []}
     method = getattr(svc.app.GetService(arg['service']), arg['method'])
@@ -41,6 +62,7 @@ ACTIONS = {
     'offline_battle_connect': _OfflineBattleConnect,
     'mark_in_battle': _MarkInBattle,
     'notify': _Notify,
+    'battle_member': _BattleMember,
     'call': _Call,
     'sleep': lambda svc, arg: svc.app.Sleep(float(arg)),
 }
