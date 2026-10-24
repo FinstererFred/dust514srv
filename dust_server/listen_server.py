@@ -203,17 +203,33 @@ class ClientLogHandler(socketserver.BaseRequestHandler):
                 f.write(f"{stamp} {line}\n")
 
 
+class BattleProbeHandler(socketserver.BaseRequestHandler):
+    """Logs UDP packets on the UE3 game port (experiment 1, variant "probe" in fake_battle.json).
+
+    Nothing answers, so we only learn whether and how the client tries to reach a battle server.
+    """
+
+    def handle(self):
+        data, _ = self.request
+        log_event({"port": self.server.server_address[1], "peer": f"{self.client_address[0]}:{self.client_address[1]}",
+                   "kind": "battle_probe", "length": len(data), "hex": data[:256].hex()})
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="0.0.0.0")
     parser.add_argument("--ports", default="80,443,8080", help="comma-separated list of ports")
     parser.add_argument("--client-log-port", type=int, default=8514, help="UDP port for client log lines")
+    parser.add_argument("--battle-probe-port", type=int, default=7777, help="UDP port logged as a fake battle server")
     args = parser.parse_args()
 
     LOG_DIR.mkdir(exist_ok=True)
     udp = socketserver.ThreadingUDPServer((args.host, args.client_log_port), ClientLogHandler)
     threading.Thread(target=udp.serve_forever, daemon=True).start()
     print(f"client log on udp {args.host}:{args.client_log_port}", flush=True)
+    probe = socketserver.ThreadingUDPServer((args.host, args.battle_probe_port), BattleProbeHandler)
+    threading.Thread(target=probe.serve_forever, daemon=True).start()
+    print(f"battle probe on udp {args.host}:{args.battle_probe_port}", flush=True)
     ssl_context = make_ssl_context()
     for port in (int(p) for p in args.ports.split(",")):
         server = Server((args.host, port), Handler)

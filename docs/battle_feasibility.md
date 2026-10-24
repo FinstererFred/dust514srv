@@ -1,0 +1,452 @@
+# Gefechte (Battles) für den wiederbelebten DUST-514-Client – Machbarkeitsstudie
+
+Stand 2026-10-23, Client 03.19 (Build 2.13.0.249 `DUST-ALPHA`). Grundlage: dekompilierter Python-Code
+unter `research\decompiled_0319\COMMON` (Pfade unten relativ dazu, Zeilennummern beziehen sich auf den
+dekompilierten Code), die Spieldatenbank `VAULT\CATMADB.PICKLE`, die Archive in `DUSTGAME\COOKEDPS3_ARC`
+und die entpackten Coalesced-INIs aus `ProtoDroidBot/514_CROP-DUSTInG`. Die EBOOT (UE3-C++-Teil) ist noch
+nicht ausgewertet. Was nur dort entschieden wird, ist unten als **offen** markiert.
+
+## Kurzfassung
+
+1. Der Ablauf im Client ist vollständig in Python und gut lesbar. Ein Gefecht beginnt damit, dass der
+   Server dem Client über den Notification-Stream `OnBattleMemberConnect` mit Adresse, Port und
+   `credential` schickt. Der Client führt dann den UE3-Konsolenbefehl
+   `CleanLoad <adresse>:<port>?credential=…?Team=…` aus. Alle nötigen CREST-Formate stehen im Code.
+2. Der Gefechtsserver bei CCP war **derselbe UE3-Code mit demselben Python**, nur als Dedicated Server
+   (`GIsServer and not GIsClient`) und, nach der Cook-INI zu urteilen, als **Windows-Build**. Dieses
+   Binary ist nicht veröffentlicht.
+3. **Wichtigster Fund:** Der PS3-Client enthält einen Offline-Modus, der die **kompletten
+   Gefechtsserver-Dienste im Client selbst startet** (`userClient._InitBattleServices` →
+   `startmini.GetBattleServices`) und Fake-Inventar für 100 Offline-Charaktere anlegt. CCP hat also
+   Client und Gefechtsserver in einem Prozess laufen lassen. Alle Karten liegen lokal vor.
+4. **Empfehlung:** Weg (d), dann (b). Zuerst ein lokales Gefecht im Client (Standalone), danach der
+   Client als Host (Listen-Server) für weitere Spieler. Ein Nachbau des Gefechtsservers (c) kommt nicht
+   in Frage.
+5. **Nächstes Experiment** (nur serverseitig, ohne Client-Patch): Der CREST-Server bietet ein Fake-Gefecht
+   an. Beim Beitritt schickt er `OnBattleMemberJoined` und dann `OnBattleMemberConnect`, wobei als
+   „Serveradresse“ ein **lokaler Kartenname** eingesetzt wird. Damit testen wir die ganze Kette bis
+   `CleanLoad` und sehen, ob die PS3-Engine die Karte lokal lädt (Details in Abschnitt 5).
+
+---
+
+## 1. Ablauf im Client: vom Menü bis zur Verbindung
+
+### 1.1 Beteiligte Dienste
+
+| Dienst | Datei | Aufgabe |
+|---|---|---|
+| `uiSvcBattle` | `dust/ui/services/uiSvcBattle.py` | Gefechtssuche (Flash-Seite `battleFinder2`), Auswahl, Abbruch |
+| `battleClient3` | `dust/battleClient3.py` | CREST-Abfragen (Theater, Warteschlangen, Gefechte), Beitritt, Backend-Benachrichtigungen |
+| `pingClient` | `dust/pingClient.py` | Regionen und Ping (`/battleserver/regions/`) |
+| `dustClient` | `dust/dustClient.py` | verarbeitet „Server bereit“, lädt Battle/District/System, Ergebnisse am Gefechtsende |
+| `dustUnreal` | `dust/dustUnreal.py` | setzt den UE3-Befehl `CleanLoad …` ab |
+| `spawnClient` | `dust/spawnClient.py` | schickt die gewählte Ausrüstung im Gefecht per UE3-RPC an den Server |
+| `squadClient` | `dust/squadClient.py` | Trupps (`squads`), für ein Solo-Gefecht nicht nötig |
+
+### 1.2 Schritt für Schritt
+
+1. **Gefechtssuche öffnen.** `uiSvcBattle.OnOpenedBattleFinderNotification` ruft
+   `battleClient3.SetPolling(True)` auf. `BattleClient3.Reload` (Z. 78) fragt dann alle 15 s ab:
+   - `GET rootData['battleTheatres']` (`vnd.ccp.eve.BattleTheatreCollection-v1`)
+   - `GET rootData['battleQueues']` (`vnd.ccp.eve.BattleQueueCollection-v1`)
+   - `GET rootData['battles']` (`vnd.ccp.eve.BattleCollection-v1`)
+   - `conflictClient.GetMyCorporationConflicts()`
+
+   Diese Anfragen kommen bei uns schon an: `/battles/theatres/`, `/battles/queues/`, `/battles/`,
+   `/battleserver/regions/` werden laut `requests.jsonl` von CCPs Offline-Handlern mit `{"items": []}`
+   beantwortet (`offline/offlineResourceMisc.py`, `OfflineBattles` Z. 180). Darum ist die Liste leer.
+2. **Auswahl** (`UISvcBattle.OnSelect`, Z. 78). Es gibt zwei Wege:
+   - **Theater mit Warteschlange** (`'queue' in theatre`): `BattleClient3.JoinQueue` (Z. 231) schickt
+     `POST queue['href']` mit Inhaltstyp und Accept `vnd.ccp.eve.BattleQueueTicket-v2` und dem Body
+     `{"regions": [{"name", "latency"}], "options": [{"href"}], "character": {"href"}}`. Die Antwort
+     wird als `queueMember` gespeichert (der Client erwartet `href`, `queue.href`, `waiting`,
+     `estimated`). Das Matchmaking läuft komplett im Backend.
+   - **Gefecht aus der Liste** (Theater `public`/`corporation`): `UISvcBattle.JoinBattle` (Z. 128)
+     verlangt `battle['status'] >= 3` und zeigt bei `teamSelect` eine Seitenwahl an. Danach schickt
+     `BattleClient3.JoinBattle` (Z. 301) `POST battle['members']['href']` mit
+     `vnd.ccp.eve.BattleMemberCreate-v1` und `{"character": {"href"}, "team"?, "region"?}`. Die
+     Antwort hat den Typ `vnd.ccp.eve.BattleMember-v1`. Bei `403 AlreadyInBattleForbiddenError` löscht
+     der Client die alte Mitgliedschaft (`headers['location']`) und versucht es erneut.
+3. **Backend meldet die Mitgliedschaft:** `OnBattleMemberJoinedFromBackend` (Z. 328) übernimmt die
+   Nachricht nur, wenn `notification['character']['href']` der eigene Charakter ist. Danach holt
+   `UpdateBattle` (Z. 356) `GET battleMember['battle']['href']` (`vnd.ccp.eve.Battle-v1`). Die UI
+   zeigt „Beitritt“ und navigiert auf der Sternkarte über `region/constellation/system/planet/district`.
+4. **Backend meldet „Server bereit“:** `OnBattleMemberConnectFromBackend` (Z. 344) wartet höchstens
+   3 s (`CONNECT_DELAY`) und leitet die Nachricht lokal weiter, wenn ein `battleMember` existiert.
+   `DustClient.OnBattleMemberConnectNotification` (Z. 244) macht dann Folgendes:
+   - `serverInfo = '%s:%s' % (notification['server']['address'], notification['server']['port'])`
+   - liest `credential`, `team` (`attacker` → 0, `defender` → 1), `battle.id`, `battle.href`, `href`
+   - lädt `GET battle` (`Battle-v1`), optional `district` (`District-v1`) und `system` (`System-v1`)
+   - sendet `OnProceedBattleConnectNotification`
+5. **Verbindung:** `DustUnreal.OnProceedBattleConnectNotification` (Z. 69) baut den Befehl
+   `CleanLoad {serverInfo}?credential={credential}?Team={teamID}?LightingMode={lightingMode}?DefaultArmor={armor}`.
+   Nach `FadeOut` und 1 s Pause setzt der Client seinen Ort auf „im Gefecht“ und führt den Befehl über
+   `GetUnrealService('Util').ExecConsoleCommand` aus. `CleanLoad` ist ein Dust-eigenes UE3-Kommando.
+   Was es genau tut, steht in der EBOOT (**offen**). Vermutlich ist es ein `ClientTravel` auf eine
+   UE3-URL mit Standardport 7777 (`[URL] Port=7777`, `NetworkDevice=IpDrv.TcpNetDriver` in
+   `PS3-DustEngine.ini`).
+6. **Im Gefecht:** Ausrüstung und Fahrzeuge schickt der Client per
+   `dustClient.InvokeSvcMethodOnBattleServerAsync` → `_pyunreal.GetRootObject().InvokeSvcMethodOnBattleServer(...)`
+   über UE3-Replikation an den Python-`battleServer` (`SpawnCharacterWithFitting`,
+   `DeployVehicleWithFitting`, `ChangeCharacterFittingDuringBattle`). Ergebnisse kommen auf dem
+   umgekehrten Weg zurück (`dustClient.OnEndOfMatchResults`, `…PartialLootReward`, Zugriffsrolle
+   `ROLE_BATTLE_SERVER`).
+
+Daneben gibt es einen Entwickler-Weg: Beim Wechsel in die Söldnerunterkunft tritt `-autologinbattle=<name>`
+in `sys.argv` automatisch einem Gefecht bei (`battleClient3.OnQuitToMercQuartersNotification`, Z. 373).
+Auf der PS3 lassen sich Kommandozeilenargumente aber kaum setzen.
+
+### 1.3 Notification-Stream
+
+`characterConnectionClient._NotificationCallback` (Z. 144) und `userBase._NotificationCallback` lesen
+jede `data`-Zeile des Streams so:
+
+```
+name = data['contentType'].split('.')[-1]   # "OnBattleMemberConnect-v1"
+name = name.split('-')[0]                    # "OnBattleMemberConnect"
+notificationShared.SendBackendNotification(name, data['body'])   # → OnBattleMemberConnectFromBackend
+```
+
+Eine Stream-Zeile sieht also z. B. so aus:
+`{"sn": 7, "data": {"contentType": "application/vnd.ccp.eve.OnBattleMemberConnect-v1", "body": {...}}}`.
+Der Body kommt eins zu eins beim Listener an.
+
+Diese Benachrichtigungen erwartet der Client für Gefechte (`battleClient3.StartProcess`, `dustClient.StartProcess`):
+
+| Name | Nutzen | benötigte Body-Felder (laut Code) |
+|---|---|---|
+| `OnBattleQueueJoined` | Warteschlangen-Ticket | wie BattleQueueTicket (`href`, `queue.href`, `waiting`, `estimated`, optional `message`) |
+| `OnBattleQueueLeft` | Ticket weg | `href`, optional `message` |
+| `OnBattleMemberJoined` | Spieler ist Gefechtsmitglied | `href`, `character.href`, `battle.href` |
+| `OnBattleMemberLeft` | Mitgliedschaft beendet | `href` |
+| `OnBattleMemberConnect` | Server bereit, verbinden | `href`, `server.address`, `server.port`, `credential`, `team`, `battle.id`, `battle.href` |
+| `OnBattleMemberDisconnect` | nur lokal weitergereicht | – |
+| `OnBattleTerminated`, `OnClusterShutdownInitiated/Cancelled` | Abbruch/Meldungen | `message` (Cluster) |
+
+### 1.4 Battle-Objekt (`vnd.ccp.eve.Battle-v1`)
+
+Diese Felder werden gelesen (`uiSvcBattle._FormatTheatreBattles`, `_GetNavigationNodes`, `_FormatBattle`,
+`dustClient`): `href`, `id`, `name`, `status` (ab 3 beitretbar), `teamSelect`, `startDate`,
+`attacker.name/href`, `defender.name/href`, `region.id`, `constellation.id`, `system.id/href`,
+`planet.id/name`, `mode.id` (für `dustClient.GetBattleModeID`, UnrealCallable), `members.href`,
+optional `district`, `serverRegion`, `maxPlayers`, `totalPlayers`, `queue`, `conflict`.
+`BattleOptionalKeys` füllt fehlende Schlüssel mit `None`, die Namen sind im dekompilierten Code aber nur
+als Zahlen zu sehen. Theater brauchen `key` (`public`/`corporation`/`faction`), `name`, `description`,
+`icon.href`, `regions[].id`, optional `queue` mit `options[]` (`href`, `name`, `description`, `icon`).
+Regionen (`BattleServerRegionCollection-v1`) brauchen `name`, `href` und `pingAddress`.
+
+---
+
+## 2. Was ist der Gefechtsserver?
+
+### 2.1 Gleicher Code, andere Rolle
+
+- `dust/app.py`, `CalculateRoleMask` (Z. 273): `elif _pyunreal.GIsServer and not _pyunreal.GIsClient:
+  role |= APP_ROLE_BATTLESERVER`. Die Rolle hängt nur an den UE3-Globals, Python ist dasselbe.
+- `dust/startmini.py`, `InitApp` (Z. 251): Wenn die Rolle `APP_ROLE_BATTLESERVER` ist, werden
+  `GetBattleServices()` geladen: `battleServer`, `battleOrbitalClient`, `dataLogBattle`, `fittingBattle2`,
+  `inventoryBattle`, `skillBattle`, `accountingBattle`, `userBattle`.
+- `PS3-DustGame.ini`: `DefaultServerGame=DustGame.DustTeamGame_Commander`, `[DustGame.DustGameSession]
+  mDefaultGameFlowIndex=2 / mDedicatedServerFlowIndex=3 / mEditorFlowIndex=4`. Der Dedicated-Ablauf ist
+  im UnrealScript angelegt.
+- `DustEngine-DedicatedServerCook.ini` unterscheidet sich von `PS3-DustEngine.ini` vor allem durch
+  `Client=WinDrv.WindowsClient`, `Paths=..\..\DustGame\Content`, `Extensions=umap`. **Die Server wurden
+  als Windows-Build gekocht.** Das passt zu `app.py` (`if sys.platform == PLATFORM_WIN32:
+  if self.HasRole(APP_ROLE_SERVER): self.pumpWindowsMessages = True`) und zum Beenden per
+  `os.kill(os.getpid(), signal.SIGINT)` in `battleServer`.
+
+### 2.2 So arbeitete ein CCP-Gefechtsserver (`dust/battleServer.py`)
+
+1. Start mit `launchconfig=<datei>` auf der Kommandozeile (`_ParseConfig`, Z. 354). Die INI hat
+   mindestens die Abschnitte `[server] serveruri, username, password`, `[battle] battleuri` und
+   `[mapurl] backendproxyaddr`. UE3 liest weitere Werte über `GetConfigSection` und
+   `GetConfigSectionValue` (UnrealCallable), darunter vermutlich Karte und Spielmodus (**offen**).
+2. UE3 meldet `OnBattleServerStartingFromUnreal`. Dann folgt `_LoginToBackend` (Z. 204): OAuth mit
+   `scope = 'battleserver'` und `clientID 'internal'` (das Secret steht im Code), Benutzer und Passwort
+   aus der Launch-Config.
+3. Nach dem Login (`OnDustUserLogonNotification`, Z. 163): eigener Notification-Stream,
+   `PUT serveruri {"status":"starting"}` (`BattleServerUpdate-v1`), `PUT battleuri`, `GET battle`
+   (`BattleServerBattle-v1`), `GET members` (`BattleServerBattleMemberCollection-v1`), danach
+   `Util.BattleServerLogin()` in UE3.
+4. Für jedes Mitglied (`_MemberJoinedBattle`, Z. 287) erzeugt der Server zufällig eine 24-stellige
+   `credential`, holt Charakter und Söldner (`Character-v1`, `Mercenary-v1`, `battleSkills`) und gibt
+   über `PUT member {"team", "credential"}` (`BattleServerBattleMemberUpdate-v1`) die Credential ans
+   Backend. **Das Backend leitet sie dann mit `OnBattleMemberConnect` an den Client weiter.** Wenn der
+   Client mit `?credential=` verbindet, ordnet UE3 ihn über
+   `GetDustCharacterURIFromCredential` (Z. 409, UnrealCallable) dem Charakter zu. Weitere
+   UnrealCallables liefern Name, Rasse, Corp, Porträt und GM-Rechte.
+5. Am Ende (`_CompleteBattle`, Z. 223): `POST battle['completed']` mit Gewinner, Kriegspunkten und
+   verbrauchten Gegenständen. Das Backend berechnet Belohnungen, der Server schickt sie per UE3-RPC an
+   die Clients (`OnEndOfMatchResults`). Nach `BATTLESERVER_ENDOFGAME_DELAY = 120` s beendet er sich.
+
+### 2.3 Kann das PS3-Binary Server sein?
+
+- **Als Dedicated Server (ohne Client): unwahrscheinlich.** Bei UE3 schaltet die Kommandozeile
+  (`server <map>`) den Dedicated-Modus ein, auf Konsolen ist er meist nicht einkompiliert. CCP hat Windows
+  gekocht. Ob die PS3-EBOOT `GIsClient=false` überhaupt zulässt, ist **offen** (EBOOT/Ghidra).
+- **Als Standalone- oder Listen-Spiel: sehr wahrscheinlich.** In UE3 läuft jede Standalone-Partie mit
+  `GIsServer` und `GIsClient`. Die Spiellogik (GameInfo, Spawns, Ziele) ist dann im Client aktiv. Dazu
+  kommen die Belege aus Abschnitt 3 (Offline-Modus). Ob `?listen` auf der PS3 funktioniert, also
+  andere Spieler sich verbinden können, ist **offen**. Die INIs konfigurieren
+  `IpDrv.TcpNetDriver` aber auch für die PS3 (Timeouts, `NetServerMaxTickRate=30`).
+
+---
+
+## 3. Der eingebaute Offline-Modus
+
+- `dust/login.py`: `OfflineLogin(loadMQ=True)` (Z. 99) ist **`@UnrealCallable`**. UE3 kann es also selbst
+  aufrufen, etwa wenn das Spiel direkt auf einer Karte startet und `loadMQ=False` übergibt.
+  `-autologinserver=offline` und `_UserLoginWithPassword` (Z. 240) führen ebenfalls dorthin.
+- `dust/userClient.py`, `OfflineConnect` (Z. 238), Ablauf in `DoHackData`:
+  `self._InitBattleServices()` → `_HackOfflineLoginData()` → `_HackOfflineClientData()` →
+  `_HackOfflineBattleData()`. `_InitBattleServices` (Z. 293) macht
+  `from startmini import GetBattleServices; self.app.InitServices(services)`. **Der Client lädt damit
+  zur Laufzeit alle Gefechtsserver-Dienste in seinen eigenen Prozess.**
+- `dust/userBattle.py`, `OfflineConnect` (Z. 32, ebenfalls UnrealCallable): legt für
+  `NUM_OFFLINE_PLAYERS = 100` Charaktere ab ID 2100001611 Inventar (jeder Typ 999-mal), alle Skills auf
+  Stufe 5 und eine Standardausrüstung aus `offline.offlineResourceFittings` an und ruft
+  `battleServer.AddExtraRolesAsGM()` auf. 100 Plätze sprechen dafür, dass mehrere Spieler an einem
+  Offline-Server getestet wurden, nicht nur einer.
+- Die Offline-Handler, die wir in `catma_service` schon ausführen, liefern für Gefechte nur leere
+  Listen und eine Region `local` mit `pingAddress 192.168.1.1`. Im Offline-Modus kam man also nicht
+  über die Gefechtssuche ins Spiel, sondern über einen direkten Kartenstart (UE3-Konsole oder
+  Kommandozeile).
+
+### 3.1 Inhalte liegen lokal vor
+
+- Spieldatenbank: 56 `DustGameType` (u. a. `gamemode_ambush_*` / `DustGame.DustSkirmishGame`,
+  `gamemode_domination_*`, `gamemode_skirmish_*`, `gamemode_survival*` / `DustGame.DustSurvivalGame`
+  mit Drohnenwellen, darunter **`gamemode_survival_infestation_1p`**, `gamemode_conquest` /
+  `DustTeamGame_Commander`, `gamemode_playineditor`) und 33 `GalaxyLevel` mit Kartenname je Modus,
+  z. B. `level_craters_bg_1`: Ambush `MN_Craters01_BG01_AmbA` (353889), Domination `…_DomB` (365195),
+  Skirmish `…_SkB` (365340), OMS `…_OmsA` (364136).
+- Die Kartenpakete selbst liegen in den PSARCs unter `COOKEDPS3_ARC`, z. B. `MN_CRATERS01_BG01_AMBA.XXX`,
+  `…_DOMA/B`, `…_SKA/B`, `…_OMSA`, `MN_CRATERS01_SANDBOX.XXX`, `MN_VALLEY01_SK02.XXX`,
+  `SHIPINTERIOR01_PROTOTYPE_*`, `WB_WARROOM_CA` (Kommandoraum). Nicht gefunden habe ich die
+  `testmap_*`-Karten. Nichts muss heruntergeladen werden.
+- KI: `[DustGame.DustAIProfileMgr]` in `PS3-DustGame.ini` (Ausrüstungen für KI-Pawns),
+  `AITemplate` (Drohnen) und `BenchmarkStepSpawnAIPlayers` (`DustGame.DustBenchmarkTestStepSpawnAIPlayers`,
+  8 KI je Seite). Es gibt also Bots, ob sie im Spiel auslösbar sind, ist **offen**.
+- Cheat-Manager: `[DustGame.DustCheatManager] mCreateGameDefaultGameType=gamemode_playineditor,
+  mCreateGameDefaultGameTypeWithGameModeMap=gamemode_skirmish`. Das deutet auf ein Cheat-Kommando
+  „CreateGame“ hin. `DUSTGAME\CONFIG\CUSTOMCOMMANDS.TXT` (`God`, `SetMCCShield`, `IgnorePlayableArea`)
+  zeigt, dass Konsolenbefehle mitgeliefert werden.
+
+### 3.2 Unser Hebel
+
+Über `client_patch\` (in `COMMON.SDAT`) können wir eigenen Python-Code im Client ausführen, aktuell den
+Log-Forwarder. Damit gehen auch `dustUnreal.RunUE3Command(...)`, `userClient._InitBattleServices()`,
+`userBattle.OfflineConnect()` und Ähnliches. Einschränkung: Der PS3-Build hat keinen Compiler für
+`.py`-Quelltext. Code muss also als vorkompiliertes Bytecode-Objekt (`marshal`) ankommen. Reine
+UE3-Konsolenbefehle sind dagegen nur Strings.
+
+---
+
+## 4. Mögliche Wege
+
+| Weg | Idee | Belege | Hürden / offene Punkte | Aufwand | Risiko |
+|---|---|---|---|---|---|
+| **(d) Lokales Gefecht (Standalone)** | Client lädt eine Gefechtskarte lokal, Spiellogik läuft im Client, Gefechtsdienste per `_InitBattleServices` | Offline-Modus (Abschnitt 3), `OfflineLogin` als UnrealCallable, alle Karten lokal | Wie startet man den Kartenwechsel? (`CleanLoad <map>` / `open` / `Start`, offen). Erwartet UE3 Callbacks (`GetDustCharacterURIFromCredential`, Fittings), die im Online-Login fehlen? Ohne zweiten Spieler endet Ambush evtl. sofort, dann KI oder Survival nötig | **klein–mittel**: 1–3 Abende bis zu einem ersten Ergebnis, danach Feinschliff | mittel: Absturz oder Hänger beim Kartenladen. Rückweg über Neustart |
+| **(b) Client als Host (Listen-Server)** | wie (d) mit `?listen`. Andere Clients bekommen über unseren CREST-Server `OnBattleMemberConnect` mit Host-IP:7777 | TcpNetDriver in der PS3-Config, Python-Gefechtsdienste laufen im Client, Credential-Mechanismus vorhanden | Listen-Support in der PS3-EBOOT (offen). Host-Python müsste die `battleServer`-Rolle sauber übernehmen (Credentials ans Backend). RPCS3-Netz zwischen zwei Instanzen/PCs (UDP 7777, ggf. RPCN-P2P). Der Host spielt mit, seine Leistung (Emulation) bestimmt den Tick | **mittel–groß**: Wochen | hoch, aber wo es scheitern würde, lässt sich früh messen |
+| **(a) Zweite RPCS3-Instanz als Dedicated Server** | PS3-Binary im Server-Modus mit `launchconfig=` | Python-Code des Servers vollständig, Launch-Config-Format zum Teil bekannt | Dedicated Server auf der PS3 vermutlich nicht einkompiliert (CCP: Windows). Kommandozeilenargumente unter RPCS3 nur per EBOOT-Patch. Zwei Emulatoren kosten viel Leistung | groß, nur nach EBOOT-Analyse | **sehr hoch**, vermutlich unmöglich |
+| **(c) Gefechtsserver nachbauen** | eigener Server mit UE3-Netzprotokoll und Dust-Spiellogik | – | UE3-Replikation aller DustGame-Klassen, Physik, Treffer, Ziele: alles nur im Binary | sehr groß (Mannjahre) | praktisch nicht machbar |
+| *(a') Windows-Server von CCP* | Original-Dedicated-Server | Cook-INI belegt, dass es ihn gab | nicht veröffentlicht | – | nicht verfügbar |
+
+Bei (b) und (d) liefert unser CREST-Server die Daten für Ergebnis und Belohnung: `POST battle.completed`,
+`member.completed`, Lohn usw. Das ist Fleißarbeit in `crest_app.py`, aber kein Risiko.
+
+---
+
+## 5. Empfehlung und nächstes Experiment
+
+**Reihenfolge:** zuerst (d) beweisen, dann (b) prüfen. (a) erst nach einer EBOOT-Analyse, (c) gar nicht.
+
+### Experiment 1: Fake-Gefecht über den normalen Beitrittsweg (nur Serveränderungen)
+
+Dafür ist kein Client-Patch nötig. Ziel: die ganze Kette Menü → `CleanLoad` testen und dabei sehen,
+was `CleanLoad` mit einem **lokalen Kartennamen** macht.
+
+1. `crest_app.py`: eigene Handler statt der leeren Offline-Antworten:
+   - `/battles/theatres/`: ein Theater `{"key": "public", "name": "Test", "description": "…",
+     "icon": {"href": …}, "regions": [{"id": …}]}` ohne `queue`, damit der Weg über die Gefechtsliste
+     gewählt wird
+   - `/battles/`: ein Gefecht mit `status: 3`, `teamSelect: false`, `mode.id: 353889`, `planet`,
+     `system`, `constellation`, `region`, `attacker`/`defender`, `members.href`
+   - `GET /battles/<id>/`: dasselbe Objekt (`Battle-v1`)
+   - `POST /battles/<id>/members/`: Antwort `BattleMember-v1` (`href`, `character`, `battle`, `team`),
+     danach in den Charakter-Stream: `OnBattleMemberJoined`, kurz darauf `OnBattleMemberConnect` mit
+     `server.address`, `server.port`, `credential`, `team: "attacker"`, `battle.{id,href}`, `href`
+2. **Variante A (Netzwerk-Probe):** `server = 127.0.0.1:7777`. Auf dem PC lauscht ein kleiner UDP-Logger
+   auf 7777. Ergebnis: Wir sehen, ob und wie der Client zu verbinden versucht (UE3-Handshake), und
+   den Befehl im `client.log` (`RunUE3Command: CleanLoad …`).
+3. **Variante B (lokale Karte):** `server.address = "MN_Craters01_BG01_AmbA?game=DustGame.DustSkirmishGame?x"`,
+   `server.port = 1`. Daraus wird `CleanLoad MN_Craters01_BG01_AmbA?game=…?x:1?credential=…`. Erwartung:
+   Die Engine lädt die Karte lokal (Standalone). Im `client.log` sehen wir dann, welche Python-Callbacks
+   UE3 anfragt und woran es scheitert, z. B. fehlende `battleServer`-Dienste.
+4. Gelingt B bis zum Kartenladen, kommt als nächster Schritt ein kleiner Client-Patch:
+   `userClient._InitBattleServices()` und `userBattle.OfflineConnect()` vor dem Kartenwechsel aufrufen
+   und bei Bedarf Credential und Charakter-Cache für den eigenen Charakter vorbelegen.
+
+Voraussetzung: Dienste neu starten, Spiel starten und im Menü „Gefecht suchen“ öffnen. **Das passiert nur
+nach Absprache.** Der Code für Schritt 1 ist ein Abend Arbeit.
+
+### Ergebnis Experiment 1 (2026-10-23)
+
+Umsetzung: `dust_server/crest_app.py` (Abschnitt „Experiment 1“), Schalter in `dust_server/fake_battle.json`
+(`enabled`, `variant`, wird bei jeder Anfrage neu gelesen), UDP-Logger auf Port 7777 in `listen_server.py`
+(`kind: battle_probe` in `requests.jsonl`). Damit niemand im Menü drücken muss, hängt `client_patch/autoexec_ue3.py`
+`-autologinbattle=LocalTest` an `sys.argv`. `battleClient3.OnQuitToMercQuartersNotification` tritt dann
+beim Betreten der Söldnerunterkunft dem Fake-Gefecht bei. Bei `enabled: false` passiert nichts.
+
+- **Kette Menü → `CleanLoad` funktioniert vollständig.** Ablauf im Log: `Autologin to battle: LocalTest` →
+  `POST /battles/514001/members/` → `OnBattleMemberJoinedFromBackend` → `OnBattleMemberConnectFromBackend`
+  → `OnProceedBattleConnectNotification` → `FadeOut` → `CleanLoad …?credential=…?Team=0?LightingMode=MOOD_DAY?DefaultArmor=352592`.
+  Das Stream-Format und die Felder aus Abschnitt 1 stimmen also.
+- **Variante A (`127.0.0.1:7777`):** Der Client spricht echtes UE3-UDP. Ab der ersten Sekunde nach `CleanLoad`
+  schickt er etwa jede Sekunde ein 37-Byte-Paket (`0080052080c0030002…40`, das erste Byte zählt hoch: 00, 05 …)
+  und dazwischen 2-Byte-Pakete (`0140`, `0240`, `0340` …), insgesamt rund 290 Pakete in 60 s. Nach genau 60 s
+  (`InitialConnectTimeout=60.0`) kommt `OnClientLostConnectionFromUnreal('Your connection to the host has been lost.')`,
+  dann `OnBattleTerminated` → `LoadMercQuarters`. **Dieses Zurückladen der Söldnerunterkunft hängt danach.**
+  Python läuft weiter, aber `NotifyMapLoaded` kommt nie, das Bild steht.
+- **Variante B (lokaler Kartenname):** `CleanLoad MN_Craters01_BG01_AmbA?gametype=gamemode_ambush_32p?dummy:1?…`
+  zeigt den Ladebildschirm (RPCS3 öffnet `MOVIES/TIP_TEXT_W_ICON_MASTER_1.BIK`). Danach gibt es minutenlang
+  **keinerlei** Aktivität: kein UDP, kein HTTP, kein UE3→Python-Aufruf, kein `NotifyMapLoaded`. `CleanLoad`
+  ist also kein allgemeines `open <URL>`. Vermutlich verbindet es immer erst zu einem Server, bevor es
+  lädt (die Karte schickt der Server), oder es wartet auf ein Ereignis, das nur der Server-Ablauf auslöst.
+- `TTY.log` zeigt „Shipping Build“ und eine leere `CommandLine:`. UE3-eigene Logs gibt es nicht.
+
+Folgerungen:
+1. Ein lokales Gefecht geht **nicht** über den normalen Beitrittsweg. Für Weg (d) brauchen wir einen anderen
+   UE3-Befehl (`open`/`Start <map>?…`, wie `dustUnreal.ReturnToLoginScreen` ihn mit `Start loginscene?…` benutzt).
+   Den können wir über `dustUnreal.RunUE3Command` aus einem Client-Patch absetzen. Das ist der nächste Test,
+   etwa `Start MN_Craters01_BG01_AmbA?gametype=gamemode_ambush_32p`, vorher `userClient._InitBattleServices()`.
+2. Für Weg (b) und jeden echten Server ist jetzt klar, was an Port 7777 ankommt: ein UE3-Verbindungsaufbau,
+   den nur eine laufende UE3-Engine (Host-Client oder Dedicated Server) beantworten kann.
+3. Nach einem gescheiterten Verbindungsversuch bleibt das Laden der Söldnerunterkunft hängen. Bei Tests muss
+   danach neu gestartet werden.
+
+### Ergebnis Experiment 2: direkter Kartenstart (2026-10-23)
+
+Werkzeug: `client_patch/dustdevhook.py` fragt in der Söldnerunterkunft `GET /dev/commands/`
+(`dust_server/dev_commands.json`) ab und führt jede neue `revision` einmal aus. Aktionen sind `ue3`,
+`init_battle_services`, `offline_battle_connect`, `mark_in_battle`, `call` (Dienstmethode, auch
+`__setattr__`) und `sleep`. Neue Befehle brauchen also keinen Neustart.
+
+- `init_battle_services` startet alle acht Gefechtsdienste im Client, und `userBattle.OfflineConnect` läuft.
+  `inventoryBattle` fängt die doppelte Registrierung bewusst ab.
+- `Start MN_Craters01_BG01_AmbA?gametype=gamemode_ambush_32p` lädt die Karte, Zustand Fighting, HUD.
+  `dustClient.ForceRespawn()` läuft per UE3-RPC an `battleServer.SpawnCharacterWithFitting` und zurück.
+  Nach etwa 30 s kommt aber „DEFEAT – Clone reserves depleted“ (auch mit `?Team=0` und mit
+  `gamemode_survival_infestation_1p`).
+- **`gametype=gamemode_playineditor`** (DustGameInfoPIE) wartet auf `Login::OfflineLoginFinished`. Nach
+  `userClient.offlineConnectFinished = True` folgen `GetSpawnFittingAdapter`, `OnSpawnPlayerFromUnreal`,
+  `CheckOutFittingForCharacter` mit der echten Ausrüstung, dann `OnMatchBegin` und **ein Spawn in der Welt
+  mit vollem HUD**. Kein Match-Ende.
+- Problem: **Es fehlt das Gelände.** Mit `MN_Craters01_BG01_AmbA` gibt es nur graues Nichts, mit
+  `MN_Craters01` erscheinen Gebäude und das Deployment-Menü, aber der Spieler fällt durch („Tap X to
+  activate Inertia Dampener“). `dustClient.battle` mit `mode.id` ändert daran nichts (`GetBattlePlanetID`
+  wird nicht abgefragt). Gelände (MegaTerrain `MT_DATA_MN_CRATERS01…`), Terraforming (`…_TF-*`) und
+  Socket-Komponenten werden vermutlich über eigene URL-Optionen oder Streaming-Befehle geladen. Das ist
+  der nächste offene Punkt, am besten mit der EBOOT (Strings zu `Terraform`, `MegaTerrain`, `Socket`, `Mood`).
+
+### Ergebnis Experiment 3: begehbare Karte (2026-10-23)
+
+Die EBOOT lässt sich mit `rpcs3.exe --headless --decrypt <EBOOT.BIN>` entschlüsseln (Ergebnis liegt lokal in
+`research/eboot_0319/`, nicht im Repo). Die Strings zeigen: Die Kartenlade-Routine kennt neben `GAME=`/`GAMETYPE=`
+die Option **`mega`** (siehe Korrektur unten: MegaServer, nicht MegaTerrain). Beim Netz-Willkommen schickt der Server `Terraform=%s` (`terraforming=`).
+Dust-eigene Funktionen zur Kartenkomposition sind u. a. `ADustGameInfoPIE.LoadNonGameModeLevels`,
+`ADustTeamGame.BeginLoadGameModeLevel/InitOutpostLevels/GetSocketFromLevel` und
+`UDustGameEngine.AddDynamicOutpostSocket/SetIsWaitingForOutpostNamesFromBackend/SetDesiredMood`.
+
+Eine Karte besteht aus mehreren Paketen (`COOKEDPS3_ARC/MN_CRATERS01.PSARC`): Basis `MN_CRATERS01`, `_MT`
+(MegaTerrain), `_BSP`, `_VI`, `_BG0x_SM` (Bauten je Schlachtfeld), `_BG0x_AMBA/DOMA/SKA/OMSA` (Spielmodus-Ebenen)
+und fast alles zusätzlich in Terraforming-Varianten `_TF-DEFAULT/-DESERT01/-BARREN01/…`.
+
+Befund im Spiel:
+- `Start MN_Craters01?mega?Terraform=Default?gametype=gamemode_playineditor?…`: Gelände **mit Kollision**,
+  begehbar, aber schwarz (ohne Textur).
+- **`Start MN_Craters01?mega?Terraform=Desert01?LightingMode=MOOD_DAY?gametype=gamemode_playineditor?Team=0?Name=DustPlayer`:
+  vollständige, texturierte und beleuchtete Karte mit Anlage, Geländern und Bergen. Laufen funktioniert, die
+  Figur spawnt mit der Ausrüstung des Charakters (hier Sturmgewehr).** Screenshot: `docs/battle_craters_desert.png`.
+- Derselbe Aufbau mit `gametype=gamemode_ambush_32p` beginnt das Match, aber es spawnt keine Figur. Der Python-RPC
+  `SpawnCharacterWithFitting` kommt an, UE3 fragt danach aber keine Ausrüstung ab, und das Bild bleibt schwarz.
+  In echten Gefechten wählt man den Spawnpunkt auf der Übersichtskarte (`ui/overviewMap.py`), die sich hier nicht
+  öffnet.
+- Die nötigen Schritte stehen als Revision in `dust_server/dev_commands.json`: Gefechtsdienste,
+  `offline_battle_connect`, `userClient.offlineConnectFinished = True`, `mark_in_battle`, `Start …`.
+- Bedienung: Der Launcher („GO“) und die Charakterauswahl brauchen Cross (`X`, kurz halten), sonst bleibt der
+  Login vor der Söldnerunterkunft stehen.
+
+Korrektur (Experiment 4): `mega=` gehört zu `UMegaServerConnection`/`UMegaServerDriver` und ist für das
+Gelände **nicht** nötig. Das Gelände kommt über `Terraform=`.
+
+### Ergebnis Experiment 4: Lichtartefakte und Ambush-Modus (2026-10-24)
+
+**Lichtartefakte** (gesprenkelte, gestrichelte helle Bänder an Lichtkegeln und Rampen): Das ist ein Darstellungsfehler
+von RPCS3, kein Fehler der Kartenkomposition. `MSAA: Disabled` änderte nichts. **`Write Color Buffers: true`** in
+`D:\rpcs3\config\custom_configs\config_NPUB30643.yml` behebt es. Danach sind die Szenen sauber bei etwa 35 FPS.
+Sicherung der vorherigen Konfiguration: `config_NPUB30643.yml.before_msaa_test`. Screenshot: `docs/battle_craters_desert_wcb.png`.
+
+**Ambush läuft lokal.** Im UnrealScript (`DUSTGAME.XXX`) steht das Entwickler-Rezept von `DustCheatManager.CreateGame`:
+`CleanLoad <map>?gametype=…?DustUserID=…?DustCharID=…?gameModeLevel=…?listen?bfid=0?loadDefaultOutpost`, danach
+der Befehl `Terraform <Variante>`. Weitere Optionen dort: `?battleID=`, `?LoadOfflineMode=1`.
+Funktionierender Start (in `dev_commands.json` als Standard hinterlegt):
+
+```
+Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_AmbA?bfid=365271?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?Team=0?Name=DustPlayer
+```
+
+- `bfid` ist die Typ-ID des `GalaxyLevel` (hier `level_craters_bg_1` = 365271), `gameModeLevel` der `mapName`
+  aus dessen `gameModes` für den gewählten Spielmodus.
+- Ohne `gameModeLevel`/`bfid` gibt es keine Spawnpunkte („DEPLOYMENT FAILED: Uplink Lost“, leere Übersichtskarte),
+  und nach `forceCompositionTime` = 30 s endet das Match mit „DEFEAT – Clone reserves depleted“.
+- Die Deploy-Übersichtskarte öffnet sich nicht von selbst. `uiSvcOverviewMap.OnRequestOpenMenu(1)` öffnet sie
+  (`ChangeOverviewMapState(1)` scheitert an `CanOpenMenu()`, solange keine Figur lebt). Sie zeigt das echte
+  Schlachtfeld, Clones 50 : 50, Timer 15:00. „Smart Deploy“ (Triangle) spawnt die Figur über den normalen Weg
+  `SpawnCharacterWithFitting` → `OnSpawnCharacterConfirmed` → `OverviewMap.SelectSpawnPoint` →
+  `GetSpawnFittingAdapter`/`CheckOutFittingForCharacter`.
+- Das Match läuft danach normal weiter (getestet über mehrere Minuten), die Karte ist komplett: Wüste, Felsen,
+  Anlagen, Fahrzeuge. Screenshot: `docs/battle_ambush_craters.png`.
+- Gegner fehlen noch: `EnableCheats`, `AddAI`, `AddAIAttacker`, `SpawnBots 4`, `SetNumBots 4` bewirkten nichts
+  (Verteidiger bleiben bei 0 Spielern). `SetMinPlayersPerTeam 0` und `SkipForceComposition` ebenfalls ohne Wirkung.
+
+Nächste Schritte:
+1. Gegner: herausfinden, ob Cheats im Release-Build aktivierbar sind (`AllowCheats`, `AddCheats`) bzw. wie
+   `DustSvcAutobot.SpawnAutoBots`/`ADustDevPlayerController.ServerSpawnAI` erreichbar sind, oder ein zweiter Client
+   per `?listen` (Weg b, Port 7777).
+2. Kartenwahl aus der Spieldatenbank ableiten (`GalaxyLevel` → `mapName`, `gameModes[].mapName`, `terraforming`,
+   `moods`) und als Gefechtsliste im CREST-Server anbieten, sodass der normale Beitrittsweg (Experiment 1) den
+   Start-Befehl auslöst statt `dev_commands.json`.
+3. Match-Ende, Belohnungen und Rückkehr in die Söldnerunterkunft testen.
+
+### Parallel: EBOOT-Analyse mit Ghidra (in Absprache)
+
+Gezielte Fragen an die entschlüsselte EBOOT:
+- Was macht das Exec-Kommando `CleanLoad` (Strings `CleanLoad`, `credential`, `LightingMode`)?
+- Gibt es `InitListen` / `?listen` im TcpNetDriver und einen Dedicated-Pfad (`GIsClient = FALSE`,
+  `server`-Commandlet, `launchconfig`, `mDedicatedServerFlowIndex`)?
+- Welche Python-Callbacks ruft der Server-Login auf (`GetDustCharacterURIFromCredential`,
+  `OfflineLogin`, `OfflineConnect`, `BattleServerLogin`)?
+- Ist der Cheat-Manager in der Release-Version aktiv (`CreateGame`, Spawn von KI-Spielern)?
+
+## Anhang: Fundstellen
+
+- `dust/battleClient3.py`: `Reload` 78, `JoinQueue` 231, `JoinBattle` 301, `OnBattleMemberJoinedFromBackend` 328,
+  `OnBattleMemberConnectFromBackend` 344, `UpdateBattle` 356, `-autologinbattle` 373
+- `dust/dustClient.py`: `InvokeSvcMethodOnBattleServerAsync` 158, `OnBattleMemberConnectNotification` 244
+- `dust/dustUnreal.py`: `Start loginscene…` 41, `OnProceedBattleConnectNotification`/`CleanLoad` 69–70
+- `dust/battleServer.py`: `OnDustUserLogonNotification` 163, `_LoginToBackend` 204, `_CompleteBattle` 223,
+  `_MemberJoinedBattle` 287, `_ParseConfig` 354, `GetDustCharacterURIFromCredential` 409,
+  `OnInvokeSvcMethodFromClient` 487
+- `dust/app.py`: `CalculateRoleMask` 273/280, `CalculatePaths` 300; `dust/const.py`: `APP_ROLE_BATTLESERVER` 10
+- `dust/startmini.py`: `GetBattleServices` 50, `InitApp` 251
+- `dust/userClient.py`: `OfflineConnect` 238, `_HackOfflineBattleData` 288, `_InitBattleServices` 293
+- `dust/userBattle.py`: `NUM_OFFLINE_PLAYERS` 13, `OfflineConnect` 32
+- `dust/login.py`: `-autologinserver` 12, `OfflineLogin` 99, `_UserLoginWithPassword` 240
+- `dust/characterConnectionClient.py`: `_NotificationCallback` 144
+- `dust/ui/services/uiSvcBattle.py`: `OnSelect` 78, `JoinBattle` 128
+- `dust/pingClient.py`: `_GetRegionsAndPing` 101
+- `offline/offlineResourceMisc.py`: `OfflineBattleServerRegion` 141, `OfflineBattles` 180
+- INIs (514_CROP-DUSTInG, 0319): `PS3-DustEngine.ini` (`[URL] Port=7777`, `[IpDrv.TcpNetDriver]`),
+  `PS3-DustGame.ini` (`DefaultServerGame`, `DustGameSession`, `DustCheatManager`, `DustAIProfileMgr`),
+  `DustEngine-DedicatedServerCook.ini` (`Client=WinDrv.WindowsClient`)

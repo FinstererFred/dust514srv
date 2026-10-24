@@ -34,5 +34,5 @@ def Install(addr=DEFAULT_ADDR, level=logging.DEBUG):
     handler.setLevel(level)
     logging.root.addHandler(handler)
     logging.root.setLevel(level)
-    logging.getLogger('dustlogfwd').info('log forwarding active, sys.path=%r', sys.path)
+    logging.getLogger('dustlogfwd').info('log forwarding active, sys.path=%r sys.argv=%r', sys.path, getattr(sys, 'argv', None))
     return handler

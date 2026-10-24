@@ -1,0 +1,48 @@
+{
+  "_comment": "Polled by client_patch/dustdevhook.py once the merc quarters are loaded; bump revision to run the commands again. Actions: ue3, init_battle_services, offline_battle_connect, mark_in_battle, notify, call ({\"service\",\"method\",\"args\"}), sleep. revision 0 = nothing. Current recipe: local Ambush on Craters BG01 (bfid = GalaxyLevel type id, gameModeLevel from its gameModes list), then open the deploy map; press Triangle (Smart Deploy) to spawn.",
+  "revision": 24,
+  "commands": [
+    {
+      "action": "sleep",
+      "arg": 5
+    },
+    {
+      "action": "init_battle_services"
+    },
+    {
+      "action": "offline_battle_connect"
+    },
+    {
+      "action": "call",
+      "arg": {
+        "service": "userClient",
+        "method": "__setattr__",
+        "args": [
+          "offlineConnectFinished",
+          true
+        ]
+      }
+    },
+    {
+      "action": "mark_in_battle"
+    },
+    {
+      "action": "ue3",
+      "arg": "Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_AmbA?bfid=365271?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?Team=0?Name=DustPlayer"
+    },
+    {
+      "action": "sleep",
+      "arg": 8
+    },
+    {
+      "action": "call",
+      "arg": {
+        "service": "uiSvcOverviewMap",
+        "method": "OnRequestOpenMenu",
+        "args": [
+          1
+        ]
+      }
+    }
+  ]
+}

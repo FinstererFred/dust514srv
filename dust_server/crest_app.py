@@ -10,6 +10,7 @@ import datetime
 import json
 import queue
 import re
+import threading
 import uuid
 import urllib.parse
 from pathlib import Path
@@ -307,6 +308,132 @@ def document_content(req):
     path = RESPONSES_DIR / "documents" / f"{key}.txt"
     body = path.read_bytes() if path.exists() else b""
     return RawResponse(body, "text/plain; charset=utf-8", {"Cache-Control": "max-age=300"})
+
+
+# --- Experiment 1: a fake battle (docs/battle_feasibility.md) -------------------------------------
+# The battle finder lists it, joining (battleClient3.JoinBattle) posts a member, and we answer like
+# CCP's backend would: OnBattleMemberJoined, then OnBattleMemberConnect with a server address, which
+# the client turns into "CleanLoad <address>:<port>?credential=..." (dustClient/dustUnreal).
+
+FAKE_BATTLE_CONFIG = Path(__file__).resolve().parent / "fake_battle.json"
+HOME_LOCATION = {  # Ana in Domain, where CCP's offline character lives (see /locations/60006418/)
+    "region": (10000043, "Domain"),
+    "constellation": (20000517, "Constellation 20000517"),
+    "system": (30003552, "Ana"),
+}
+
+
+def fake_battle_config():
+    config = json.loads(FAKE_BATTLE_CONFIG.read_text(encoding="utf-8")) if FAKE_BATTLE_CONFIG.exists() else {}
+    return config if config.get("enabled") else None
+
+
+def corporation_link(req, corp_id):
+    try:
+        name = offline_result(f"/corporations/{corp_id}/").get("name")
+    except Exception:
+        name = None
+    return {"id": corp_id, "name": name or f"Corporation {corp_id}", "href": f"{req['base']}/corporations/{corp_id}/"}
+
+
+def fake_battle(req, config):
+    """Battle-v1 as read by uiSvcBattle (_FormatTheatreBattles, _GetNavigationNodes) and dustClient."""
+    battle_href = f"{req['base']}/battles/{config['battle_id']}/"
+    links = {key: {"id": id_, "name": name, "href": f"{req['base']}/{key}s/{id_}/"}
+             for key, (id_, name) in HOME_LOCATION.items()}
+    links["system"]["href"] = f"{req['base']}/solarsystems/{HOME_LOCATION['system'][0]}/"
+    return {
+        "id": config["battle_id"], "href": battle_href, "name": config["name"],
+        "status": 3,  # uiSvcBattle.JoinBattle ignores battles below 3
+        "teamSelect": False,
+        "startDate": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
+        "mode": {"id": config["mode_id"]},  # dustClient.GetBattleModeID, a CATMA DustGameType
+        "planet": {"id": config["planet_id"], "name": "Ana"},
+        **links,
+        "attacker": corporation_link(req, config["attacker_corp_id"]),
+        "defender": corporation_link(req, config["defender_corp_id"]),
+        "members": {"href": f"{battle_href}members/"},
+        "serverRegion": "local",
+        "maxPlayers": 32, "totalPlayers": 1,
+    }
+
+
+@route("GET", r"^/battles/theatres/$")
+def battle_theatres(req):
+    if not fake_battle_config():
+        return offline_result(req["path"])
+    # No "queue" key: uiSvcBattle.OnSelect then joins a listed battle instead of a matchmaking queue.
+    return {"items": [{"key": "public", "name": "Lokale Gefechte", "description": "Testgefecht des lokalen Servers",
+                       "icon": {"href": f"{req['base']}/images/theatres/public.png"},
+                       "regions": [{"id": "local"}]}]}
+
+
+@route("GET", r"^/battles/$")
+def battles(req):
+    config = fake_battle_config()
+    if not config:
+        return offline_result(req["path"])
+    return {"items": [fake_battle(req, config)]}
+
+
+@route("GET", r"^/battles/(\d+)/$")
+def battle(req):
+    config = fake_battle_config()
+    if not config or id_from_href(req["path"]) != config["battle_id"]:
+        return RawResponse(b'{"message": "unknown battle"}', "application/json", status=404)
+    return fake_battle(req, config)
+
+
+@route("GET", r"^/battles/(\d+)/members/$")
+def battle_members(req):
+    return {"items": [], "totalCount": 0, "pageCount": 1}
+
+
+@route("POST", r"^/battles/(\d+)/members/$")
+def join_battle(req):
+    # BattleMemberCreate-v1: {"character": {"href"}, "team"?, "region"?}; answer is a BattleMember-v1.
+    config = fake_battle_config()
+    battle_id = int(re.match(r"^/battles/(\d+)/members/$", req["path"]).group(1))
+    if not config or battle_id != config["battle_id"]:
+        return RawResponse(b'{"message": "unknown battle"}', "application/json", status=404)
+    character_href = ((req["body"] or {}).get("character") or {}).get("href", "")
+    character_id = id_from_href(character_href)
+    team = (req["body"] or {}).get("team") or config["team"]
+    battle_href = f"{req['base']}/battles/{battle_id}/"
+    member = {
+        "href": f"{battle_href}members/{character_id}/",
+        "character": {"id": character_id, "href": character_href},
+        "battle": {"id": battle_id, "href": battle_href},
+        "team": team,
+    }
+    target = config["target_localmap"] if config["variant"] == "localmap" else config["target_probe"]
+    connect = {**member, "credential": uuid.uuid4().hex[:24],  # battleServer._MemberJoinedBattle uses 24 hex chars
+               "server": {"address": target["address"], "port": target["port"]}}
+    # The client reads contentType's last dotted part minus "-v1" as the notification name
+    # (characterConnectionClient._NotificationCallback) and passes "body" to battleClient3.
+    owner = f"/characters/{character_id}/notifications/"
+    for delay, name, body in ((config["joined_delay_seconds"], "OnBattleMemberJoined", member),
+                              (config["connect_delay_seconds"], "OnBattleMemberConnect", connect)):
+        data = {"contentType": f"application/vnd.ccp.eve.{name}-v1", "body": body}
+        threading.Timer(delay, HUB.send, args=(owner, data)).start()
+    return member
+
+
+@route("DELETE", r"^/battles/(\d+)/members/(\d+)/$")
+def leave_battle(req):
+    # BattleMemberDelete-v1 (battleClient3.LeaveBattle); the client drops the membership itself.
+    return {}
+
+
+DEV_COMMANDS = Path(__file__).resolve().parent / "dev_commands.json"
+
+
+@route("GET", r"^/dev/commands/$")
+def dev_commands(req):
+    # Polled by client_patch/dustdevhook.py; the client runs the commands once per new revision.
+    if not DEV_COMMANDS.exists():
+        return {"revision": 0, "commands": []}
+    return json.loads(DEV_COMMANDS.read_text(encoding="utf-8"))
 
 
 def parse_body(headers, body):
