@@ -670,13 +670,50 @@ eingestellt waren 720x480, 25 % Auflösungsskalierung und kein MSAA. Ergebnis: V
 RAM für RPCS3. Der Python-Teil des Spiels startete in der Zeit nicht. Abgebrochen; Konfiguration zurückgestellt
 (`config_NPUB30643.yml.before_lavapipe`).
 
-Folgerung für einen Host im Rechenzentrum: Weder Null-Renderer noch Software-Vulkan sind in dieser Form brauchbar.
+Nachtrag (2026-10-25): Der Wert „Async Shader Recompiler“ war ungültig. RPCS3 meldete
+`cfg::try_to_enum_value(...): invalid enum` und fiel auf den Standard mit Interpreter zurück. Die gültigen Werte
+für `Shader Mode` sind „Legacy Recompiler (single-threaded)“, „Async Recompiler (multi-threaded)“, „Async Recompiler
+with Shader Interpreter“ und „Shader Interpreter only“. Mit „Async Recompiler (multi-threaded)“ entfällt die
+Vorkompilierung. Ergebnis mit lavapipe (Host, Dev-Autologin): Python nach 4 Minuten, Merc Quarters nach
+6,5 Minuten, 0,06–0,34 FPS, rund 20 GB RAM, 1–2 genutzte Kerne. Eine Minute später stürzt RPCS3 im
+lavapipe-Treiber ab (Ausnahme `0xC0000008` in `RtlEnterCriticalSection`, aufgerufen aus `vulkan_lvp.dll`). Selbst
+ohne den Absturz wäre der Host bei unter einem Bild pro Sekunde unbrauchbar, denn ein UE3-Listen-Server rechnet das
+Spiel im selben Takt, in dem er rendert.
+
+Folgerung für einen Host im Rechenzentrum: Weder Null-Renderer noch Software-Vulkan sind brauchbar.
 Realistisch ist ein Server mit (kleiner) GPU und Vulkan-Treiber, z. B. ein Root-Server mit Nvidia- oder
 AMD-Karte, Docker mit GPU-Durchreichung und Xvfb. Offen bleibt, ob die Interpreter-Varianten auf der Platte
 zwischengespeichert werden. Dann wäre die lange Vorkompilierung nur einmal nötig.
 
 Für einen zweiten PC gilt dasselbe. Statt 127.0.0.1 trägt man dann die LAN-Adresse des Hosts ein (CREST-URL in
 `SAKE.INI` bzw. `-autologinserver`, Ziel des `CleanLoad`). Mit einem eigenen RPCN-Konto entfällt der lokale RPCN-Server.
+
+**Null-Renderer gelöst (2026-10-25):** Der Hänger ist ein RPCS3-Fehler, keiner des Spiels. Damit braucht der Host
+**keine GPU**.
+- Befund: Mit `Renderer: "Null"` schafft das Spiel genau ein Bild alle 12,016 s (721 VBlanks). Dazwischen pollt der
+  `RenderingThread` mit `appSleep(0.0002)` einen RSX-Fence (EBOOT `FUN_006649d8`/`FUN_006648ac`: Label-Wert ≥ Fence),
+  und die RSX-FIFO kommt nur in kleinen Schritten voran, obwohl der RSX-Thread fast untätig ist. Mit
+  `Vblank Rate: 600` sinkt die Zeit auf 1,2 s pro Bild. Die Wartezeit hängt also an den VBlanks und nicht an der
+  Rechenleistung. Der Fenstertitel „FPS: 60“ zählte nur Flips.
+- Ursache: `GSRender::flip()` (`rpcs3/Emu/RSX/GSRender.cpp`), das nur der Null-Renderer benutzt, ruft anders als
+  Vulkan und OpenGL nicht `rsx::thread::flip(info)` auf. Dadurch bleibt nach dem ersten per Syscall angeforderten
+  Flip `async_flip_requested.emu_requested` gesetzt. `do_local_task` ruft deshalb bei jedem Durchlauf
+  `handle_emu_flip()` auf, und mit `Frame limit: Auto` schläft die RSX dort jedes Mal bis zum nächsten 60-Hz-Takt.
+  Zwischen den Flips arbeitet sie nur wenige Befehle ab. Upstream ist das auch am 2026-10-25 (`f848fd1e1`) noch so.
+- Workaround ohne eigenen Build: `Frame limit: "Off"` oder `PS3 Native`. Dann schläft `handle_emu_flip()` nicht, und
+  der Host ist nach rund 1 Minute in den Merc Quarters, startet die Ambush-Karte als Listen-Server (UDP 7777) und
+  tickt Python flüssig. Nachteil: Er flippt dauernd (Fenstertitel ~450.000 „FPS“, RSX-Thread ~80 %,
+  `_gcm_intr_thread` ~30 % CPU). Die SPURS-Kerne laufen mit je ~80 % wie auf einer echten Karte. Konfiguration:
+  `D:\rpcs3\config\custom_configs\config_NPUB30643.yml.null_host` (aktiv bleibt die Vulkan-Konfiguration).
+- Eigentlicher Fix (eine Zeile, `rpcs3_patches/null-renderer-flip.patch`): `GSRender::flip()` ruft
+  `rsx::thread::flip(info)` auf. Dafür muss RPCS3 selbst gebaut werden (Windows: VS 2022 + Qt 6; Linux: im
+  Docker-Image für den Server).
+- Mehrspieler-Test (15:09–15:15): Host `D:\rpcs3` mit `config_NPUB30643.yml.null_host` (Null, `PS3 Native`) ist
+  nach 75 s auf der Ambush-Karte. Client 2 (`D:\rpcs3_b`, Vulkan) tritt per `-autologinbattle=LocalTest` über die
+  Gefechtssuche bei (`POST /battles/514001/members/` um 15:12:13), lädt die Host-Karte, spawnt als 2100001612
+  (`SpawnCharacterWithFitting` beim Host, `OnSpawnCharacterConfirmed` beim Client) und steht mit 26 FPS im Spiel
+  (`battle_mp_nullhost_client2.png`). Der Dev-Hook öffnet die Host-Deploy-Karte wie gewohnt wieder. Nicht geprüft:
+  Bewegung und Kampf über längere Zeit, mehr als ein Client.
 
 ### Parallel: EBOOT-Analyse mit Ghidra (in Absprache)
 
