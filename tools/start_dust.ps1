@@ -3,8 +3,11 @@
 #   .\start_dust.ps1 -MoveOnly                         only move an already running game window
 #   .\start_dust.ps1 -Monitor \\.\DISPLAY3 -Fullscreen  fullscreen on that monitor (RPCS3's Alt+Enter)
 #   .\start_dust.ps1 -GameArgs "-benchmark"            command line for the game (shows up in RPCS3's TTY.log)
-#   .\start_dust.ps1 -Rpcs3 D:\rpcs3_b\rpcs3.exe -GameArgs "-autologinserver=127.0.0.1:8081"
-#                                                     second instance (multiplayer test): own copy, port 8081, no PSN
+#   .\start_dust.ps1 -GameArgs "-autologinserver=127.0.0.1:8080 -autologincharindex=0"
+#                                                     listen-server host without key presses (no launcher, character 1)
+#   .\start_dust.ps1 -Rpcs3 D:\rpcs3_b\rpcs3.exe -GameArgs "-autologinserver=127.0.0.1:8081 -autologincharindex=1 -autologinbattle=LocalTest"
+#                                                     second instance (multiplayer test): own copy, port 8081, local
+#                                                     RPCN; joins the host's battle from the battle finder
 param(
     [switch]$MoveOnly,
     [switch]$Fullscreen,

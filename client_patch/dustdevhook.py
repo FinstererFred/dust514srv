@@ -7,12 +7,13 @@ import sys
 
 log = logging.getLogger('dustdevhook')
 POLL_SECONDS = 3
-_state = {'polling': False, 'revision': None}
+_state = {'polling': False, 'revision': None, 'battleServer': False, 'members': set(), 'hostSpawns': 0}
 
 
 def _InitBattleServices(svc, arg):
     # What userClient.OfflineConnect does first: start the battle server services in this process.
     svc.app.GetService('userClient')._InitBattleServices()
+    _state['battleServer'] = True
 
 
 def _OfflineBattleConnect(svc, arg):
@@ -33,7 +34,8 @@ def _BattleMember(svc, arg):
     # Registers a joining player with this client's battle server (listen server host), the way
     # battleServer._MemberJoinedBattle does for the backend's member notification, but without CREST
     # lookups. The joining client then connects with CleanLoad <host>:7777?credential=<credential>.
-    # {"credential": "...", "characterID": 2100001612, "characterURI": "...", "name": "...", "team": 1}
+    # {"credential": "...", "characterID": 2100001612, "characterURI": "...", "name": "...", "team": 1,
+    #  "host": true for the listen-server host's own player}
     from dust.battleServer import BattleCharacterCache
     character = BattleCharacterCache()
     character.credential = arg['credential']
@@ -48,6 +50,8 @@ def _BattleMember(svc, arg):
     character.characterID = arg['characterID']
     character.vipLevel = 0
     svc.app.GetService('battleServer').characterCaches[arg['characterURI']] = character
+    if arg.get('host'):
+        _state['hostCharID'] = arg['characterID']
 
 
 def _Call(svc, arg):
@@ -78,6 +82,54 @@ def _RunCommands(svc, data):
             log.exception('dev command failed: %s %r', action, arg)
 
 
+def _RegisterBattleMembers(svc, session):
+    # Listen-server host: the dev server lists the players that joined its fake battle
+    # (dust_server/fake_battle.json, variant "listen"); register each new credential once.
+    if not _state.get('battleServer'):
+        return
+    for member in session.Resource('/dev/battle/members/').Get(accept='vnd.ccp.eve.Api-v3').get('items', []):
+        if member['credential'] not in _state['members']:
+            _state['members'].add(member['credential'])
+            log.info('battle member: %s %s', member['characterID'], member['characterURI'])
+            _BattleMember(svc, member)
+
+
+OVERVIEW_MAP_STATE_MAP = 1  # dust.ui.services.uiSvcOverviewMap
+REOPEN_WATCH_SECONDS = 30
+
+
+def _ReopenDeployMap(app, hostSpawns):
+    # On a listen server another player's spawn also closes the host player's deploy map (once that
+    # player is in, 5 to 15 seconds later), which leaves the host without a way to spawn. Open it again
+    # unless the host spawned itself in the meantime.
+    overviewMap = app.GetService('uiSvcOverviewMap')
+    for _ in range(REOPEN_WATCH_SECONDS):
+        app.Sleep(1)
+        if _state['hostSpawns'] != hostSpawns:
+            return
+        if overviewMap.overviewMapState != OVERVIEW_MAP_STATE_MAP:
+            log.info('reopening the deploy map after another player spawned')
+            overviewMap.OnRequestOpenMenu(1)
+            return
+
+
+def _PatchBattleServer(module):
+    cls = module.BattleServer
+    originalSpawn = cls.SpawnCharacterWithFitting
+
+    def SpawnCharacterWithFitting(self, _charid, fittingInfoStr):
+        if str(_charid) == str(_state.get('hostCharID')):
+            _state['hostSpawns'] += 1
+        elif self.app.GetService('uiSvcOverviewMap').overviewMapState == OVERVIEW_MAP_STATE_MAP:
+            self.New(_ReopenDeployMap, self.app, _state['hostSpawns'])
+        return originalSpawn(self, _charid, fittingInfoStr)
+
+    # OnInvokeSvcMethodFromClient checks the attributes the service decorators set (e.g. "access").
+    SpawnCharacterWithFitting.__dict__.update(originalSpawn.im_func.__dict__)
+    cls.SpawnCharacterWithFitting = SpawnCharacterWithFitting
+    log.info('dustdevhook: patched dust.battleServer.BattleServer')
+
+
 def _Poll(svc):
     session = svc.app.GetService('characterConnectionClient').httpSession
     while True:
@@ -88,6 +140,7 @@ def _Poll(svc):
                 _state['revision'] = revision
                 log.info('dev commands revision %s', revision)
                 _RunCommands(svc, data)
+            _RegisterBattleMembers(svc, session)
         except Exception:
             log.exception('dev command poll failed')
         svc.app.Sleep(POLL_SECONDS)
@@ -115,7 +168,7 @@ def _PatchDustUnreal(module):
     log.info('dustdevhook: patched dust.dustUnreal.DustUnreal')
 
 
-PATCHES = {'dust.dustUnreal': _PatchDustUnreal}
+PATCHES = {'dust.dustUnreal': _PatchDustUnreal, 'dust.battleServer': _PatchBattleServer}
 
 
 class _PatchFinder(object):

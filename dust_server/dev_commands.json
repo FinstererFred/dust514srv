@@ -1,6 +1,6 @@
 {
-  "_comment": "Polled by client_patch/dustdevhook.py once the merc quarters are loaded; bump revision to run the commands again. Actions: ue3, init_battle_services, offline_battle_connect, mark_in_battle, notify, battle_member ({credential, characterID, characterURI, name, team}: lets a second client join this listen server), call ({\"service\",\"method\",\"args\"}), sleep. revision 0 = nothing. Current recipe: multiplayer host. Local Ambush on Craters BG01 as a UE3 listen server (?listen, UDP 7777), then the deploy map; press Triangle (Smart Deploy) to spawn. battle_member registers the second client (port 8081) with a fixed credential; it joins with dev_commands_8081.json. PlayerControllerClass=DustDevPlayerController enables dev console commands (SetCloneReservesForTeam, SpawnInstallationByType, SpawnByType, SpawnAI, ...).",
-  "revision": 44,
+  "_comment": "Polled by client_patch/dustdevhook.py once the merc quarters are loaded; bump revision to run the commands again. Actions: ue3, init_battle_services, offline_battle_connect, mark_in_battle, notify, battle_member ({credential, characterID, characterURI, name, team}: lets a second client join this listen server), call ({\"service\",\"method\",\"args\"}), sleep. revision 0 = nothing. Current recipe: multiplayer host. Local Ambush on Craters BG01 as a UE3 listen server (?listen, UDP 7777), then the deploy map; press Triangle (Smart Deploy) to spawn. ?battleID makes DustTeamGame.Login take the credential branch (characterID from battle_member) instead of giving every player the host's offline ID; battle_member registers the host itself; players who join the fake battle (fake_battle.json, variant listen) are registered from /dev/battle/members/. PlayerControllerClass=DustDevPlayerController enables dev console commands (SetCloneReservesForTeam, SpawnInstallationByType, SpawnByType, SpawnAI, ...).",
+  "revision": 54,
   "commands": [
     {
       "action": "sleep",
@@ -26,11 +26,12 @@
     {
       "action": "battle_member",
       "arg": {
-        "credential": "6dd9c18702db6271cdc247ca",
-        "characterID": 2100001612,
-        "characterURI": "http://127.0.0.1:8081/characters/2100001612/",
-        "name": "Mercenary Two",
-        "team": 1
+        "credential": "7a4c6f23d690341b392958d0",
+        "characterID": 2100001611,
+        "characterURI": "http://127.0.0.1:8080/characters/2100001611/",
+        "name": "Host Mercenary",
+        "team": 0,
+        "host": true
       }
     },
     {
@@ -38,7 +39,7 @@
     },
     {
       "action": "ue3",
-      "arg": "Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_AmbA?bfid=365271?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?listen?Team=0?Name=DustPlayer?PlayerControllerClass=DustGame.DustDevPlayerController"
+      "arg": "Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_AmbA?bfid=365271?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?listen?battleID=514001?credential=7a4c6f23d690341b392958d0?Team=0?Name=DustPlayer?PlayerControllerClass=DustGame.DustDevPlayerController"
     },
     {
       "action": "sleep",

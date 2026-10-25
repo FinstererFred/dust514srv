@@ -1,19 +1,5 @@
 {
-  "_comment": "Dev commands for the second client (multiplayer test, served on port 8081; see dev_commands.json for the actions). Bump revision to run them. Recipe: join the host's listen server the way dustUnreal does after OnBattleMemberConnect (in-battle location, then CleanLoad <address>:<port>?credential=...?Team=...). The credential must match the host's battle_member command in dev_commands.json.",
-  "revision": 3,
-  "commands": [
-    {
-      "action": "call",
-      "arg": {
-        "service": "dustUnreal",
-        "method": "OnProceedBattleConnectNotification",
-        "args": [
-          "127.0.0.1:7777",
-          "6dd9c18702db6271cdc247ca",
-          1,
-          "MOOD_DAY"
-        ]
-      }
-    }
-  ]
+  "_comment": "Dev commands for the second client (multiplayer test, served on port 8081; see dev_commands.json for the actions). Bump revision to run them. Joining the host no longer needs a command: start the client with -autologinbattle=LocalTest and it joins the fake battle (fake_battle.json, variant listen) from the battle finder.",
+  "revision": 0,
+  "commands": []
 }

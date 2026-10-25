@@ -347,7 +347,8 @@ def fake_battle(req, config):
         "status": 3,  # uiSvcBattle.JoinBattle ignores battles below 3
         "teamSelect": False,
         "startDate": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
-        "mode": {"id": config["mode_id"]},  # dustClient.GetBattleModeID, a CATMA DustGameType
+        # dustClient.GetBattleModeID (a CATMA DustGameType); overviewPanel shows the name on the deploy map.
+        "mode": {"id": config["mode_id"], "name": config.get("mode_name", "Ambush")},
         "planet": {"id": config["planet_id"], "name": "Ana"},
         **links,
         "attacker": corporation_link(req, config["attacker_corp_id"]),
@@ -406,17 +407,65 @@ def join_battle(req):
         "battle": {"id": battle_id, "href": battle_href},
         "team": team,
     }
-    target = config["target_localmap"] if config["variant"] == "localmap" else config["target_probe"]
-    connect = {**member, "credential": uuid.uuid4().hex[:24],  # battleServer._MemberJoinedBattle uses 24 hex chars
-               "server": {"address": target["address"], "port": target["port"]}}
+    credential = uuid.uuid4().hex[:24]  # battleServer._MemberJoinedBattle uses 24 hex chars
+    listen_member = None
+    if config["variant"] == "listen":
+        # A client hosts the map (?listen?battleID=...); it picks this member up from /dev/battle/members/
+        # and registers the credential with its battle server; only then is the client told to connect.
+        member["team"] = team = config.get("listen_team", team)
+        listen_member = register_listen_member(req, config, team)
+        credential = listen_member["credential"]
+    target = config[{"localmap": "target_localmap", "listen": "target_listen"}.get(config["variant"], "target_probe")]
+    connect = {**member, "credential": credential, "server": {"address": target["address"], "port": target["port"]}}
     # The client reads contentType's last dotted part minus "-v1" as the notification name
     # (characterConnectionClient._NotificationCallback) and passes "body" to battleClient3.
     owner = f"/characters/{character_id}/notifications/"
-    for delay, name, body in ((config["joined_delay_seconds"], "OnBattleMemberJoined", member),
-                              (config["connect_delay_seconds"], "OnBattleMemberConnect", connect)):
-        data = {"contentType": f"application/vnd.ccp.eve.{name}-v1", "body": body}
-        threading.Timer(delay, HUB.send, args=(owner, data)).start()
+    joined = {"contentType": "application/vnd.ccp.eve.OnBattleMemberJoined-v1", "body": member}
+    threading.Timer(config["joined_delay_seconds"], HUB.send, args=(owner, joined)).start()
+    connect_data = {"contentType": "application/vnd.ccp.eve.OnBattleMemberConnect-v1", "body": connect}
+    if listen_member:
+        with LISTEN_LOCK:
+            PENDING_CONNECTS[credential] = (owner, connect_data)
+    else:
+        threading.Timer(config["connect_delay_seconds"], HUB.send, args=(owner, connect_data)).start()
     return member
+
+
+LISTEN_MEMBERS = []  # players registered with the listen-server host, one entry per join
+PENDING_CONNECTS = {}  # credential -> (notification owner, OnBattleMemberConnect) until the host has it
+LISTEN_LOCK = threading.Lock()
+LISTEN_CONNECT_DELAY = 2.0  # the host registers right after its poll returns
+
+
+def register_listen_member(req, config, team):
+    # Every player needs its own battle character ID and URI: DustTeamGame.Login (credential branch,
+    # ?battleID=) takes them from the host's battleServer, whose cache is keyed by URI. All local players
+    # share CCP's offline characters, so neither the CREST character nor the user tells them apart.
+    # The host itself uses first_member_id - 1.
+    with LISTEN_LOCK:
+        character_id = config.get("first_member_id", 2100001612) + len(LISTEN_MEMBERS)
+        member = {
+            "credential": uuid.uuid4().hex[:24],
+            "characterID": character_id,
+            "characterURI": f"{req['base']}/battlecharacters/{character_id}/",
+            "name": f"Mercenary {len(LISTEN_MEMBERS) + 2}",
+            "team": {"attacker": 0, "defender": 1}[team],
+        }
+        LISTEN_MEMBERS.append(member)
+        return member
+
+
+@route("GET", r"^/dev/battle/members/$")
+def listen_battle_members(req):
+    # Polled by the listen-server host (client_patch/dustdevhook.py), which registers new credentials.
+    # The host's Python does not run while it loads a map, so a poll also means the map is up: send the
+    # joining clients their OnBattleMemberConnect now (a client connecting mid-load crashes the host).
+    with LISTEN_LOCK:
+        for member in LISTEN_MEMBERS:
+            pending = PENDING_CONNECTS.pop(member["credential"], None)
+            if pending:
+                threading.Timer(LISTEN_CONNECT_DELAY, HUB.send, args=pending).start()
+        return {"items": list(LISTEN_MEMBERS)}
 
 
 @route("DELETE", r"^/battles/(\d+)/members/(\d+)/$")

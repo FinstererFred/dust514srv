@@ -3,7 +3,6 @@
 # autoexec_ue3_orig.pyo; we run its bytecode unchanged and install the log forwarder after the
 # original Run() has set up logging.
 import marshal
-import sys
 
 exec marshal.loads(__loader__.get_data('autoexec_ue3_orig.pyo')[8:]) in globals()
 
@@ -11,10 +10,9 @@ _original_Run = Run
 
 
 def Run():
-    # Developer switch in battleClient3.OnQuitToMercQuartersNotification: on entering the merc
-    # quarters, join the battle with this name. Only the fake battle of dust_server/fake_battle.json
-    # is called that, so without it (enabled=false) nothing happens.
-    sys.argv = list(getattr(sys, 'argv', [])) + ['-autologinbattle=LocalTest']
+    # Game arguments (RPCS3: after "--") reach sys.argv. A joining client gets
+    # -autologinbattle=LocalTest there (battleClient3 joins that battle on entering the merc quarters);
+    # a listen-server host must not, or it would join its own battle.
     _original_Run()
     try:
         import dustlogfwd

@@ -28,8 +28,11 @@ nicht ausgewertet. Was nur dort entschieden wird, ist unten als **offen** markie
    `CleanLoad` und sehen, ob die PS3-Engine die Karte lokal lädt (Details in Abschnitt 5).
 6. **Stand 2026-10-24 (Experiment 9):** Mehrspieler funktioniert grundsätzlich. Ein Client hostet die Ambush-Karte
    per `?listen`, ein zweiter (zweite RPCS3-Instanz mit lokalem RPCN-Server) tritt mit einer Credential bei, die der
-   Host per Dev-Befehl registriert hat. Danach spawnt er im gegnerischen Team. Offen ist, dass der Host-Spieler
-   nach dem Beitritt nicht mehr spawnt.
+   Host per Dev-Befehl registriert hat. Danach spawnt er im gegnerischen Team.
+7. **Stand 2026-10-25:** Jeder Spieler hat eine eigene Gefechts-ID (`?battleID=` schaltet `DustTeamGame.Login` auf
+   den Credential-Zweig). Clients treten über die Gefechtssuche bei, Credentials vergibt der CREST-Server. Host und
+   Client starten ohne Tastendruck (`-autologinserver`, `-autologincharindex`, `-autologinbattle`). Ambush,
+   Skirmish und Domination laufen mit zwei Spielern; Acquisition lädt, hat aber noch falsche Startpositionen.
 
 ---
 
@@ -571,6 +574,74 @@ Ergebnis:
   `OnSpawnCharacterConfirmed` gehen an den ersten Controller mit dieser ID. Mit Host-zuerst-Reihenfolge klappt
   es, für mehr als zwei Spieler muss die ID-Vergabe aber noch gelöst werden (UnrealScript `DustTeamGame.Login`
   bzw. die Spawn-RPC untersuchen).
+- **Gelöst (2026-10-25):** Disassembliert mit `research/tools_local/uscript.py` (Bytecode-Leser für das
+  UE3-Paket `DUSTGAME.XXX`). `DustTeamGame.Login` kennt zwei Zweige. Ist `mSessionServerID != -1`, holt es
+  per Credential URI, `GetCharacterID`, Name, Rasse, Corp, Rang, Porträt und Geschlecht vom Battle-Server. Sonst
+  ruft es `GetLocalCharacterID(out id)` auf und nur bei `false` `GetNextOfflineCharID()`. Auf einem Listen-Server
+  liefert `GetLocalCharacterID` bei **jedem** Login die lokale Offline-ID des Host-Prozesses, daher die
+  Kollision. Die Spawn-RPC (`DustPlayerController.InvokeSvcMethodOnBattleServer`) nimmt `PRI.GetCharID()`.
+  `mSessionServerID` setzt `InitGame` aus der URL-Option **`?battleID=`**. Das Host-Rezept startet die Karte daher
+  mit `?listen?battleID=514001?credential=<Host>` und registriert per `battle_member` sich selbst
+  (2100001611, Team 0) und Client 2 (2100001612, Team 1). Ergebnis: getrennte IDs, Name „Host Mercenary“ in der
+  Squad-Liste, beide Spawns kommen mit eigener ID an, und Client 2 kann auch zuerst spawnen. Das Assert
+  `NetMode == Dedicated` im Credential-Zweig bleibt im Release-Build folgenlos. `DustAccessControl.PreLogin`
+  prüft die Credential nur bei `bfid > 0`.
+- Spawnt ein anderer Spieler, während der Host auf der Deploy-Karte steht, schließt sich die Karte beim Host (HUD
+  mit Übersichtskamera, kein Spawn möglich). `uiSvcOverviewMap.OnRequestOpenMenu(1)` öffnet sie wieder. Der
+  Dev-Hook macht das jetzt selbst: Er patcht `BattleServer.SpawnCharacterWithFitting` und öffnet die Karte
+  6 Sekunden nach dem Spawn eines fremden Spielers wieder, falls sie vorher offen war.
+
+**Beitritt über die Gefechtssuche (2026-10-25):** Der manuelle Beitritt per Dev-Befehl ist ersetzt.
+- `fake_battle.json` hat die Variante `listen` (Ziel `target_listen` = Host-Adresse und UDP 7777). Beim Beitritt
+  (`POST /battles/514001/members/`) vergibt der CREST-Server je Spieler eine Credential, eine eigene
+  Gefechts-Charakter-ID (ab `first_member_id` 2100001612), eine eigene URI (`/battlecharacters/<id>/`) und das Team
+  `listen_team`. Danach schickt er wie CCPs Backend `OnBattleMemberJoined` und nach 8 Sekunden
+  `OnBattleMemberConnect` mit Adresse und Credential.
+- Der Host fragt `GET /dev/battle/members/` alle 3 Sekunden ab und registriert jede neue Credential per
+  `battle_member` in seinem Battle-Server.
+- Ein Client tritt mit dem Startargument `-autologinbattle=LocalTest` beim Betreten der Merc Quarters selbst bei;
+  von Hand geht es über die Gefechtssuche. Der Client-Patch erzwingt das Argument nicht mehr, sonst würde der Host
+  seinem eigenen Gefecht beitreten.
+- Das Battle-Objekt braucht `mode.name`, sonst bricht die Übersicht (`overviewPanel`) mit `KeyError` ab und es
+  gibt keine Deploy-Auswahl.
+
+Getestet mit zwei Instanzen: Client 2 tritt per Autologin bei, spawnt als 2100001612, die Host-Karte öffnet sich
+wieder, und der Host spawnt als 2100001611.
+
+- Der Server schickt `OnBattleMemberConnect` erst, wenn der Host die Spielerliste mit dem neuen Spieler abgeholt
+  hat. Während der Host eine Karte lädt, läuft sein Python nicht, die Abfrage kommt also erst danach. Ein Client,
+  der mitten ins Laden verbindet, brachte den Host vorher zum Absturz.
+- Die Host-Karte schließt sich erst, wenn der fremde Spieler wirklich im Spiel ist (in Skirmish bis zu
+  12 Sekunden). Der Hook beobachtet deshalb 30 Sekunden lang und öffnet die Karte, sobald sie zugeht, außer der
+  Host spawnt in der Zeit selbst.
+
+**Host ohne Tastendrücke (2026-10-25):** Der Client bringt alles mit. Mit `-autologinserver=<CREST>` setzt
+`login.py` `attemptedAutoLogin`, und der Launcher schließt sich ohne GO (`launcherPanel._UpdateTick`).
+`-autologincharindex=<n>` wählt den Charakter (`characterCreation2._AutomateCharacterLoginIfRequested`). Die NP-
+Anmeldung über RPCN läuft weiter im Hintergrund. Aufrufe:
+
+    tools/restart_all.ps1 -Monitor \\.\DISPLAY3 -GameArgs "-autologinserver=127.0.0.1:8080 -autologincharindex=0"
+    tools/start_dust.ps1 -Rpcs3 D:\rpcs3_b\rpcs3.exe -GameArgs "-autologinserver=127.0.0.1:8081 -autologinusername=dust2 -autologincharindex=1 -autologinbattle=LocalTest"
+
+Der Host ist damit nach rund einer Minute in den Merc Quarters und startet per Dev-Rezept die Karte. Client 2 tritt
+ohne Eingriff bei. Gespielt werden muss nur noch das Absetzen.
+
+**Weitere Spielmodi (2026-10-25):** Kennungen aus CATMA (`GalaxyLevel.gameModes`, `DustGameType`), umschaltbar mit
+`dust_server/set_host_mode.py <modus>`:
+
+| Modus | `gametype` | `gameModeLevel` (`bfid`) | Ergebnis |
+|---|---|---|---|
+| Ambush | `gamemode_ambush_32p` | `MN_Craters01_BG01_AmbA` (365271) | läuft mit zwei Spielern |
+| Skirmish | `gamemode_skirmish_4obj_32p` | `MN_Craters01_BG01_SkB` (365271) | läuft mit zwei Spielern: MCC, Ziele A–D, je 150 Klone (`battle_mp_skirmish_host.png`) |
+| Domination | `gamemode_domination_32p` | `MN_Craters01_BG01_DomB` (365271) | läuft mit zwei Spielern: Ziel A, MCC (`battle_mp_domination_client2.png`) |
+| Acquisition | `gamemode_domination_2` (`DustDominationGame`, Punkte laufen nach 300 s ab) | `MN_Highland01_BG01_Dom20A` (365818) | lädt, Spawn klappt, aber der Spieler steht in einer roten Zone („Ground unit unsafe zone“), Punkte 000/000 (`battle_mp_acquisition_host.png`); Startposition bzw. Team-Zuordnung noch offen |
+| Ambush OMS | `gamemode_ambush_oms_32p` | `MN_Craters01_BG01_OmsA` (365271) | noch nicht getestet |
+| Planetary Conquest | `gamemode_conquest` (`DustTeamGame_Commander`) | keine Karte mit diesem Modus in `GalaxyLevel` | braucht Corporations, Bezirke und Clone-Logistik im Backend, nicht im Client |
+
+**Bekannter Absturz:** Wechselt ein laufender Host in einen *anderen* Modus (z. B. Ambush → Skirmish,
+Skirmish → Domination), stürzt er einige Sekunden nach dem Laden ab: Lesezugriff auf Adresse 0 in der Funktion bei
+`0x8cb534`, die ein Null-Objekt bekommt. Derselbe Modus lässt sich im laufenden Host neu starten. Für einen anderen
+Modus wird der Host neu gestartet; die Clients treten danach per Gefechtssuche wieder bei.
 
 Ablauf zum Nachstellen:
 1. Server neu starten (Ports 8080 und 8081, Probe 17777), danach den lokalen RPCN-Server starten
