@@ -39,7 +39,7 @@
     },
     {
       "action": "ue3",
-      "arg": "Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_AmbA?bfid=365271?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?listen?battleID=514001?credential=7a4c6f23d690341b392958d0?Team=0?Name=DustPlayer?PlayerControllerClass=DustGame.DustDevPlayerController"
+      "arg": "Start MN_Craters01?gametype=gamemode_domination_32p_academy?gameModeLevel=MN_Craters01_BG03_DomA_Academy?bfid=365959?loadDefaultOutpost?Terraform=Desert01?LightingMode=MOOD_DAY?listen?battleID=514001?credential=7a4c6f23d690341b392958d0?Team=0?Name=DustPlayer?PlayerControllerClass=DustGame.DustDevPlayerController"
     },
     {
       "action": "sleep",

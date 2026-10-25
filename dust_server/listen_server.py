@@ -132,7 +132,8 @@ def handle_http(conn, meta: dict) -> None:
         method, target = request_line.split(" ")[:2]
         base = f"{'https' if meta.get('tls') else 'http'}://{headers.get('Host', '127.0.0.1')}"
         try:
-            status, content_type, payload, source, extra_headers = APP.handle(method, target, headers, body, base)
+            status, content_type, payload, source, extra_headers = APP.handle(method, target, headers, body, base,
+                                                                              peer=meta["peer"].rsplit(":", 1)[0])
         except Exception as e:
             status, content_type, source, extra_headers = 500, "application/json", f"server_error:{e!r}", {}
             payload = json.dumps({"message": repr(e)}).encode()

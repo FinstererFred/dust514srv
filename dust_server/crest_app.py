@@ -8,6 +8,7 @@ Lookup order for each request:
 
 import datetime
 import json
+import os
 import queue
 import re
 import threading
@@ -169,6 +170,42 @@ def offline_result(path):
     return result
 
 
+# Regions on the battle finder's star map. CCP's offline universe has none, but the client selects Sinq Laison
+# (uiSvcMap.GetInitialData hardcodes 10000032) and travels from that selection; Domain is our battle's region.
+# "hasChildren": False keeps the map at universe level, so no region/constellation data is needed.
+MAP_REGIONS = [(10000032, "Sinq Laison", 0.35, 0.55), (10000043, "Domain", 0.65, 0.45)]
+
+
+@route("GET", r"^/map/regions/$")
+def map_universe(req):
+    # MapUniverse-v1 (dust/mapClient.py, ui/starmapCommon.py GetNodeMap). Any KeyError in the star map is an
+    # uncaught exception, which the client treats as a disconnect.
+    universe = offline_result(req["path"])
+    href = f"{req['base']}/map/regions/"
+    universe.update({
+        "href": href, "type": "universe",
+        "boundary": {"xMin": 0, "xMax": 1, "yMin": 0, "yMax": 1},
+        "regions": universe.get("regions") or [
+            {"id": region_id, "name": name, "href": f"{href}{region_id}/",
+             "position": {"u": u, "v": v, "flipped": False}, "weight": 0.0, "connections": [], "hasChildren": False}
+            for region_id, name, u, v in MAP_REGIONS],
+        "owners": {kind: {"href": f"{req['base']}/map/owners/{kind}/"} for kind in ("sovereignty", "districts")},
+    })
+    return universe
+
+
+@route("GET", r"^/map/owners/(sovereignty|districts)/$")
+def map_owners(req):
+    # Sovereignty/district owners per map level (mapClient.GetOwners, uiSvcMap.GetOwners): nobody owns anything
+    return {"map": {"href": f"{req['base']}/map/regions/"}, "regions": [], "constellations": [], "systems": []}
+
+
+@route("GET", r"^/map/search/$")
+def map_search(req):
+    # MapSearchCollection-v1 (mapClient.SearchMap). No hits: the battle finder then leaves the star map as is.
+    return {"items": [], "totalCount": 0, "pageCount": 1}
+
+
 def id_from_href(href):
     m = re.search(r"/(\d+)/?$", href or "")
     return int(m.group(1)) if m else None
@@ -290,7 +327,16 @@ def corporation(req):
     for size in ("32x32", "64x64", "128x128", "256x256"):
         logo[size] = {"href": f"{req['base']}/images/corporations/{corp_id}_{size.split('x')[0]}.png"}
     corp["logo"] = logo
+    # The battle finder's star map loads the corporation's districts (corporationClient.GetDistrictsURI);
+    # without the link the KeyError counts as an uncaught exception = disconnect. No planetary conquest here.
+    corp.setdefault("districts", {"href": f"{req['base']}/corporations/{corp_id}/districts/"})
     return corp
+
+
+@route("GET", r"^/corporations/(\d+)/districts/$")
+def corporation_districts(req):
+    # DistrictCollection-v1 (districtClient.GetCorporationDistricts reads "items")
+    return {"items": [], "totalCount": 0, "pageCount": 1}
 
 
 @route("GET", r"^/documents/$")
@@ -499,6 +545,7 @@ def fake_battle(req, config):
     links = {key: {"id": id_, "name": name, "href": f"{req['base']}/{key}s/{id_}/"}
              for key, (id_, name) in HOME_LOCATION.items()}
     links["system"]["href"] = f"{req['base']}/solarsystems/{HOME_LOCATION['system'][0]}/"
+    links["system"]["security"] = 0.5  # battleFinder2.SetJoiningState shows it on the join screen
     return {
         "id": config["battle_id"], "href": battle_href, "name": config["name"],
         "status": 3,  # uiSvcBattle.JoinBattle ignores battles below 3
@@ -506,7 +553,8 @@ def fake_battle(req, config):
         "startDate": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S"),
         # dustClient.GetBattleModeID (a CATMA DustGameType); overviewPanel shows the name on the deploy map.
         "mode": {"id": config["mode_id"], "name": config.get("mode_name", "Ambush")},
-        "planet": {"id": config["planet_id"], "name": "Ana"},
+        # battleFinder2.RedrawPlanetThreaded looks the planet up by href (map search, empty here)
+        "planet": {"id": config["planet_id"], "name": "Ana", "href": f"{req['base']}/planets/{config['planet_id']}/"},
         **links,
         "attacker": corporation_link(req, config["attacker_corp_id"]),
         "defender": corporation_link(req, config["defender_corp_id"]),
@@ -614,11 +662,25 @@ def register_listen_member(req, config, team):
         return member
 
 
+# Addresses the listen-server host polls from. Every client with our COMMON.SDAT patch polls the dev
+# endpoints, so without this a player's client would get the host's commands and start its own
+# listen-server match (that the backend knows nothing about, so it cannot be left either). The host runs
+# on the server itself (127.0.0.1 in the Docker container); players come from outside or through the
+# Docker gateway.
+HOST_PEERS = {p.strip() for p in os.environ.get("DUST_HOST_PEERS", "127.0.0.1,::1,::ffff:127.0.0.1").split(",") if p.strip()}
+
+
+def from_host(req):
+    return req.get("peer") is None or req["peer"] in HOST_PEERS
+
+
 @route("GET", r"^/dev/battle/members/$")
 def listen_battle_members(req):
     # Polled by the listen-server host (client_patch/dustdevhook.py), which registers new credentials.
     # The host's Python does not run while it loads a map, so a poll also means the map is up: send the
     # joining clients their OnBattleMemberConnect now (a client connecting mid-load crashes the host).
+    if not from_host(req):
+        return {"items": []}
     server_status.host_members_polled()
     with LISTEN_LOCK:
         for member in LISTEN_MEMBERS:
@@ -650,6 +712,8 @@ def dev_commands(req):
     # Polled by client_patch/dustdevhook.py; the client runs the commands once per new revision.
     # A second client talks to port 8081 (multiplayer test) and gets dev_commands_8081.json.
     second_client = req["base"].endswith(":8081")
+    if not second_client and not from_host(req):
+        return {"revision": 0, "commands": []}  # a player's client, not the host (see HOST_PEERS)
     path = DEV_COMMANDS_DIR / ("dev_commands_8081.json" if second_client else "dev_commands.json")
     if not path.exists():
         return {"revision": 0, "commands": []}
@@ -686,13 +750,13 @@ def content_type_for(headers):
 
 
 class CrestApp:
-    def handle(self, method, target, headers, body, base):
+    def handle(self, method, target, headers, body, base, peer=None):
         """Return (status, content_type, payload bytes, source, extra headers) for one request."""
         url = urllib.parse.urlsplit(target)
         path = url.path
         req = {
             "method": method, "path": path, "query": dict(urllib.parse.parse_qsl(url.query)),
-            "headers": headers, "body": parse_body(headers, body), "base": base,
+            "headers": headers, "body": parse_body(headers, body), "base": base, "peer": peer,
         }
         result, source = None, None
         for m, regex, func in _routes:

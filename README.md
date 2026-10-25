@@ -1,5 +1,7 @@
 # DUST 514 – lokaler Revival-Server
 
+English setup guide (server with Docker, client in RPCS3): [docs/setup_guide_en.md](docs/setup_guide_en.md)
+
 Ein privater Testserver, mit dem der PS3-Client von DUST 514 (NPUB30643, Version 03.19) in RPCS3
 wieder bis in die Söldnerunterkunft kommt. Nicht mit CCP oder Sony verbunden.
 

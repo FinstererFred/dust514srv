@@ -75,6 +75,9 @@ werden (gemeinsamer Netz-Namespace). Ein Neustart über den Watchdog betrifft nu
   Sekunden (Standard 120) nicht mehr abfragt (`GET /dev/host/heartbeat/`). Das passiert zum Beispiel nach einem
   Neustart von `crest`: Das Python des Spiels stirbt dann, während RPCS3 weiterläuft.
 - Web-Admin: `http://<server>:8088/`, „Restart host“ nutzt dieselbe `restart`-Datei.
+- Dev-Befehle (`/dev/commands/`, `/dev/battle/members/`) bekommt nur der Host, also Anfragen von `127.0.0.1`
+  (einstellbar mit `DUST_HOST_PEERS` im `crest`-Container). Andere Clients mit unserem `COMMON.SDAT`-Patch
+  bekommen eine leere Liste. Sonst würden sie das Host-Rezept ausführen und ein eigenes Listen-Match starten.
 - Modus und Karte: `dust_server/fake_battle.json` und `dev_commands.json` (bzw. `dust_server/set_host_mode.py`)
 
 ## Netz
