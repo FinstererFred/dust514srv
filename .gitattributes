@@ -1,0 +1,3 @@
+# Scripts that run inside the Linux containers need LF, also in a Windows checkout
+docker/**/*.sh text eol=lf
+docker/**/*.py text eol=lf

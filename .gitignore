@@ -13,3 +13,6 @@ __pycache__/
 *.pyc
 *.pyo
 *.tmp
+
+# Local Docker settings (docker/.env.example is the template)
+docker/.env

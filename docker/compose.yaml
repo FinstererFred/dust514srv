@@ -1,0 +1,64 @@
+# DUST 514 standalone battle host for a Linux server (no GPU needed). Usage and data layout: docker/README.md
+#   cd docker && cp .env.example .env   # adjust DUST_DATA
+#   docker compose up -d --build
+#
+# All services use the host network: the game inside RPCS3 reaches the CREST server at 127.0.0.1
+# (IP swap list in its config), the CREST server reaches the offline service at 127.0.0.1:8090, and
+# the listen server needs UDP 7777 reachable from the players.
+
+name: dust514
+
+services:
+  catma:
+    build:
+      context: ..
+      dockerfile: docker/catma/Dockerfile
+    image: dust514-catma
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - ../catma_service:/srv/dust/catma_service:ro
+      - ${DUST_DATA}/extracted_0319:/data/extracted:ro
+      - ${DUST_DATA}/rpcs3/config/rpcs3/dev_hdd0/game/NPUB30643/USRDIR/DUSTGAME/VAULT:/data/vault:ro
+
+  crest:
+    build:
+      context: ..
+      dockerfile: docker/crest/Dockerfile
+    image: dust514-crest
+    network_mode: host
+    restart: unless-stopped
+    depends_on: [catma]
+    environment:
+      CREST_PORTS: ${CREST_PORTS:-80,443,8080}
+      # web admin (dust_server/admin.py); without a token one is generated into dust_server/state/admin_token.txt
+      DUST_ADMIN_PORT: ${ADMIN_PORT:-8088}
+      DUST_ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      # "Restart host" in the admin writes the watchdog's restart request here and reads its status.json
+      DUST_HOST_CONTROL_DIR: /data/control
+    volumes:
+      # read-write: battle/dev-command JSON files are edited at runtime, logs, certs and admin state are written here
+      - ../dust_server:/srv/dust/dust_server
+      - ${DUST_DATA}/rpcs3/control:/data/control
+
+  host:
+    build:
+      context: ..
+      dockerfile: docker/host/Dockerfile
+      args:
+        BUILD_JOBS: ${BUILD_JOBS:-0}
+    image: dust514-host
+    network_mode: host
+    restart: unless-stopped
+    depends_on: [crest]
+    stop_grace_period: 30s
+    environment:
+      HOST_GAME_ARGS: ${HOST_GAME_ARGS:--autologinserver=127.0.0.1:8080 -autologincharindex=0}
+      STARTUP_GRACE: ${STARTUP_GRACE:-1200}
+      HANG_TIMEOUT: ${HANG_TIMEOUT:-180}
+      # restart when the game stops polling dust_server (/dev/host/heartbeat/) while RPCS3 keeps running
+      HEARTBEAT_TIMEOUT: ${HEARTBEAT_TIMEOUT:-120}
+    volumes:
+      # config/rpcs3 = RPCS3's config dir (config/, dev_hdd0/, dev_flash/, patches/), cache = log and
+      # PPU/SPU caches, control = restart/stop requests and status.json for the watchdog
+      - ${DUST_DATA}/rpcs3:/data

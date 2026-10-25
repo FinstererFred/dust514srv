@@ -1,0 +1,26 @@
+# Override for Docker Desktop (Windows/macOS), where host networking does not route UDP replies back to the
+# host, so players never get an answer from the listen server. Instead, all three services share one network
+# namespace (the host service's), which keeps 127.0.0.1 working between them, and the ports are published.
+#   docker compose -f compose.yaml -f compose.desktop.yaml up -d
+# RPCN on the Windows host is reachable from the containers as host.docker.internal.
+
+services:
+  host:
+    network_mode: bridge
+    depends_on: !reset []
+    ports:
+      - "7777:7777/udp"   # UE3 listen server
+      - "80:80"
+      - "443:443"
+      - "8080:8080"
+      - "8081:8081"       # second local test client
+      - "8088:8088"       # web admin
+      - "8514:8514/udp"   # client log forwarding
+
+  crest:
+    network_mode: service:host
+    depends_on: !reset [host, catma]
+
+  catma:
+    network_mode: service:host
+    depends_on: !reset [host]

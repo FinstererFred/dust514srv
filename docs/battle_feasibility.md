@@ -714,6 +714,11 @@ Für einen zweiten PC gilt dasselbe. Statt 127.0.0.1 trägt man dann die LAN-Adr
   (`SpawnCharacterWithFitting` beim Host, `OnSpawnCharacterConfirmed` beim Client) und steht mit 26 FPS im Spiel
   (`battle_mp_nullhost_client2.png`). Der Dev-Hook öffnet die Host-Deploy-Karte wie gewohnt wieder. Nicht geprüft:
   Bewegung und Kampf über längere Zeit, mehr als ein Client.
+- Docker (2026-10-25, `docker/README.md`): RPCS3 aus dem Quellcode mit dem Patch, `--headless`, Null-Renderer,
+  `Frame limit: Auto`, unter Docker Desktop/WSL2. Der Host läuft ohne Flip-Schleife bis zur Karte, und Client 2 tritt
+  bei und spawnt (`battle_mp_docker_client2.png`). Zwei Stolpersteine: Docker Desktops Host-Netz leitet keine
+  UDP-Antworten zurück (daher `compose.desktop.yaml`), und ein Neustart des CREST-Servers lässt das Python des Hosts
+  sterben, während RPCS3 weiterläuft. Deshalb prüft der Watchdog jetzt `/dev/host/heartbeat/`.
 
 ### Web-Admin im Spiel geprüft (2026-10-25)
 

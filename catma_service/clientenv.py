@@ -5,8 +5,9 @@ import sys
 import types
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-EXTRACTED = os.path.join(ROOT, 'research', 'extracted_0319')
-VAULT = r'D:\rpcs3\dev_hdd0\game\NPUB30643\USRDIR\DUSTGAME\VAULT'
+# DUST_EXTRACTED / DUST_VAULT override the local Windows layout (used by the Docker setup in docker/)
+EXTRACTED = os.environ.get('DUST_EXTRACTED') or os.path.join(ROOT, 'research', 'extracted_0319')
+VAULT = os.environ.get('DUST_VAULT') or r'D:\rpcs3\dev_hdd0\game\NPUB30643\USRDIR\DUSTGAME\VAULT'
 
 
 class _Tasklet(object):
@@ -129,3 +130,16 @@ def setup():
     sys.FinalRelease = True
     sys.noLogging = False
     sys.hasPyCompiler = True
+    _import_sake_platform()
+
+
+def _import_sake_platform():
+    """sake.platform knows only win32 and PS3; its win32 variant is plain Python (appPath), so use it on Linux too."""
+    if sys.platform == 'win32' or 'sake.platform' in sys.modules:
+        return
+    real_platform = sys.platform
+    sys.platform = 'win32'
+    try:
+        __import__('sake.platform')
+    finally:
+        sys.platform = real_platform

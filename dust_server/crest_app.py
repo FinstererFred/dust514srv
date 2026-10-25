@@ -11,6 +11,7 @@ import json
 import queue
 import re
 import threading
+import time
 import uuid
 import urllib.parse
 from pathlib import Path
@@ -625,6 +626,14 @@ def listen_battle_members(req):
             if pending:
                 threading.Timer(LISTEN_CONNECT_DELAY, HUB.send, args=pending).start()
         return {"items": list(LISTEN_MEMBERS)}
+
+
+@route("GET", r"^/dev/host/heartbeat/$")
+def host_heartbeat(req):
+    # For the Docker watchdog (docker/host/watchdog.py): seconds since the host's game last polled us.
+    # RPCS3 can keep running after the game's Python died (e.g. when this server was restarted).
+    polls = [t for t in (server_status.HOST["last_poll"], server_status.HOST["last_members_poll"]) if t]
+    return {"age": round(time.time() - max(polls), 1) if polls else None}
 
 
 @route("DELETE", r"^/battles/(\d+)/members/(\d+)/$")
