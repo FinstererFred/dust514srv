@@ -1,6 +1,6 @@
 {
   "_comment": "Dev commands for the second client (multiplayer test, served on port 8081; see dev_commands.json for the actions). Bump revision to run them. Recipe: join the host's listen server the way dustUnreal does after OnBattleMemberConnect (in-battle location, then CleanLoad <address>:<port>?credential=...?Team=...). The credential must match the host's battle_member command in dev_commands.json.",
-  "revision": 1,
+  "revision": 3,
   "commands": [
     {
       "action": "call",

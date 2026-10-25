@@ -561,6 +561,16 @@ Ergebnis:
   beide Spieler dieselbe Offline-ID (`GetNextOfflineCharID`), sodass die Anfrage des Hosts verloren geht.
   Nächster Schritt: Host zuerst spawnen lassen, dann Client 2 beitreten lassen, oder die ID-Vergabe in
   `DustTeamGame.Login` untersuchen.
+- **Nachtrag (gleicher Tag):** Spawnt der Host zuerst und tritt Client 2 erst danach bei, sind beide gleichzeitig
+  im Spiel (`battle_mp_both_host.png`, `battle_mp_both_client2.png`). Beide Spawn-Anfragen tragen aber weiter die
+  ID 2100001611, auch mit Host-Charakter 3 (2100002246) und Client-Charakter 2 (2100001612). Die CREST-Charakterwahl
+  spielt also keine Rolle. Nach `GetDustCharacterURIFromCredential` fragt der Host `GetCharacterID` nicht ab; die
+  ID aus `battle_member` wird nicht benutzt. `GetNextOfflineCharID` (vtable-Slot `0x430` → `0x757578`) zählt nur
+  einen globalen Zähler (`0x1cbdd68`, Start 2100001611) hoch. Vermutung: Jeder Prozess vergibt seinem Spieler
+  diese erste Offline-ID, und die Spawn-RPC trägt die ID des Clients. Folge: Bestätigungen wie
+  `OnSpawnCharacterConfirmed` gehen an den ersten Controller mit dieser ID. Mit Host-zuerst-Reihenfolge klappt
+  es, für mehr als zwei Spieler muss die ID-Vergabe aber noch gelöst werden (UnrealScript `DustTeamGame.Login`
+  bzw. die Spawn-RPC untersuchen).
 
 Ablauf zum Nachstellen:
 1. Server neu starten (Ports 8080 und 8081, Probe 17777), danach den lokalen RPCN-Server starten
@@ -572,6 +582,27 @@ Ablauf zum Nachstellen:
    Sobald die Merc Quarters geladen sind, die `revision` in `dev_commands_8081.json` erhöhen.
 4. Nach Änderungen an `client_patch/` beide Installationen patchen: `tools/patch_common_sdat.py` und
    `tools/set_toc_size.py COMMON.SDAT`, für die Kopie mit `DUST_GAME_DIR=D:\rpcs3_b\…\DUSTGAME`.
+
+**Test Null-Renderer (Vorstufe für einen Host ohne GPU, z. B. im Docker-Container):** Host mit `Renderer: "Null"`
+für Bild und Ton gestartet. Login und CREST laufen, das Fenster meldet 60 FPS. Ab dem Launcher wird Python aber
+nicht mehr getaktet (über 3 Minuten ohne Logzeile), und RPCS3 meldet alle 12–25 Sekunden „Display queue was
+discarded while not empty“. Das Spiel kommt mit dem Null-Renderer praktisch nicht voran, der Launcher reagiert
+nicht auf Eingaben. Für einen Host ohne Grafikkarte bleiben Vulkan per Software (lavapipe/SwiftShader) mit
+minimaler Auflösung oder ein Server mit (kleiner) GPU. Die Konfiguration ist zurückgestellt
+(`config_NPUB30643.yml.before_null`).
+
+**Test Software-Vulkan (lavapipe):** Mesa 26.2.4 für Windows (pal1000/mesa-dist-win, `research/mesa/`), per
+`VK_DRIVER_FILES` als einziger Vulkan-Treiber. RPCS3 rendert damit auf `llvmpipe (LLVM 23.1.2, 256 bits)`,
+eingestellt waren 720x480, 25 % Auflösungsskalierung und kein MSAA. Ergebnis: Vor dem Spielstart baut RPCS3 die
+6650 Shader-Interpreter-Varianten, und zwar auch mit „Async Shader Recompiler“. Nach 16 Minuten stand es bei
+708 (Hochrechnung über 2 Stunden), bei 0,04–1,3 FPS, nur 1–2 genutzten Kernen eines Ryzen 9 5900X und 18 GB
+RAM für RPCS3. Der Python-Teil des Spiels startete in der Zeit nicht. Abgebrochen; Konfiguration zurückgestellt
+(`config_NPUB30643.yml.before_lavapipe`).
+
+Folgerung für einen Host im Rechenzentrum: Weder Null-Renderer noch Software-Vulkan sind in dieser Form brauchbar.
+Realistisch ist ein Server mit (kleiner) GPU und Vulkan-Treiber, z. B. ein Root-Server mit Nvidia- oder
+AMD-Karte, Docker mit GPU-Durchreichung und Xvfb. Offen bleibt, ob die Interpreter-Varianten auf der Platte
+zwischengespeichert werden. Dann wäre die lange Vorkompilierung nur einmal nötig.
 
 Für einen zweiten PC gilt dasselbe. Statt 127.0.0.1 trägt man dann die LAN-Adresse des Hosts ein (CREST-URL in
 `SAKE.INI` bzw. `-autologinserver`, Ziel des `CleanLoad`). Mit einem eigenen RPCN-Konto entfällt der lokale RPCN-Server.
