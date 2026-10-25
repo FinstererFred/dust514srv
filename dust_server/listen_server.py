@@ -9,6 +9,7 @@ import argparse
 import base64
 import datetime
 import json
+import os
 import socket
 import socketserver
 import ssl
@@ -16,6 +17,8 @@ import struct
 import threading
 from pathlib import Path
 
+import admin
+import server_status
 from crest_app import CrestApp, StreamResponse
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -30,6 +33,7 @@ _log_lock = threading.Lock()
 def log_event(event: dict) -> None:
     event = {"time": datetime.datetime.now().isoformat(timespec="milliseconds"), **event}
     line = json.dumps(event, ensure_ascii=False)
+    server_status.record(event)
     with _log_lock:
         print(line, flush=True)
         with open(LOG_DIR / "requests.jsonl", "a", encoding="utf-8") as f:
@@ -225,6 +229,9 @@ def main() -> None:
     parser.add_argument("--client-log-port", type=int, default=8514, help="UDP port for client log lines")
     parser.add_argument("--battle-probe-port", type=int, default=17777,
                         help="UDP port logged as a fake battle server (not 7777, which a listen server needs)")
+    parser.add_argument("--admin-host", default=os.environ.get("DUST_ADMIN_HOST", "0.0.0.0"), help="web admin address")
+    parser.add_argument("--admin-port", type=int, default=int(os.environ.get("DUST_ADMIN_PORT", "8088")),
+                        help="web admin port (admin.py), 0 = off")
     args = parser.parse_args()
 
     LOG_DIR.mkdir(exist_ok=True)
@@ -240,6 +247,8 @@ def main() -> None:
         server.ssl_context = ssl_context
         threading.Thread(target=server.serve_forever, daemon=True).start()
         print(f"listening on {args.host}:{port}", flush=True)
+    if args.admin_port:
+        admin.start(args.admin_host, args.admin_port)
     threading.Event().wait()
 
 

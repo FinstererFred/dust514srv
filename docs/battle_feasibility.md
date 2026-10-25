@@ -715,6 +715,25 @@ Für einen zweiten PC gilt dasselbe. Statt 127.0.0.1 trägt man dann die LAN-Adr
   (`battle_mp_nullhost_client2.png`). Der Dev-Hook öffnet die Host-Deploy-Karte wie gewohnt wieder. Nicht geprüft:
   Bewegung und Kampf über längere Zeit, mehr als ein Client.
 
+### Web-Admin im Spiel geprüft (2026-10-25)
+
+Der CREST-Server hat jetzt eine Weboberfläche (`dust_server/admin.py`, Port 8088, Bedienung im README). Geprüft
+mit dem Host in `D:\rpcs3`:
+
+- **News:** Die im Admin gesetzte Nachricht des Tages steht im Launcher (untere Zeile). Der Reiter NEWS zeigt
+  `readMe.txt`. Die Dokument-Links tragen jetzt die Änderungszeit im Namen, damit der Client geänderte Texte holt.
+- **Markt und Wallet:** Mit 999 ISK für die Plasma Cannon sowie 777.777 ISK und 5.000 AUR im Admin zeigt der
+  Marktplatz genau diese Werte (`admin_market_ingame.png`). Der ISK-Markt war vorher leer. Jetzt kommen Gruppenbaum
+  und Preise aus CATMA (`catma_service/catalog.py`, `GET /catalog`). Geöffnet per Dev-Rezept auf Port 8081
+  (`call uiSvcMarket.OpenMarketWithItem [350916]`), weil Tastendrücke in dieser RPCS3-Konfiguration nicht ankommen.
+- **Moduswechsel:** Ambush → Skirmish gespeichert, dann „Restart host“ im UI (`tools/restart_host.ps1` startet nur
+  die Host-Instanz neu). Der Host kommt mit Skirmish hoch: Ziele A–D, je 150 Klone (`admin_host_skirmish.png`).
+  Zurück zu Ambush per „Save & apply“, während der Host läuft: Das UI vergibt keine neue Revision und zeigt
+  „restart needed“. Der Host läuft ohne Absturz weiter. Nach „Restart host“ läuft Ambush mit je 50 Klonen und Timer
+  (`admin_host_ambush.png`). Das Status-Feld „Running“ zeigt jeweils den Startbefehl, den der Host geholt hat.
+- Ein Neustart des CREST-Servers trennt laufende Clients (Benachrichtigungsstream unbekannt →
+  `NOTIFICATION_STREAM_DISCONNECTED`).
+
 ### Parallel: EBOOT-Analyse mit Ghidra (in Absprache)
 
 Gezielte Fragen an die entschlüsselte EBOOT:

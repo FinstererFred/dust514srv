@@ -55,6 +55,33 @@ tools\start_dust.ps1 -MoveOnly             # Spielfenster klein auf den zweiten 
 Logs liegen in `dust_server\logs\`: `requests.jsonl` (jede Anfrage mit Antwortquelle), `client.log`
 (Python-Log des Clients), ältere Läufe unter `archive\`.
 
+## Web-Admin
+
+Der CREST-Server bringt eine Weboberfläche mit (`dust_server/admin.py`, Seiten in `dust_server/admin_ui/`),
+Standard **http://<server>:8088/** (Oberfläche auf Englisch). Sie läuft im selben Prozess, braucht nur die Python-Standardbibliothek und
+funktioniert unter Windows wie im Linux-Container.
+
+| Bereich | Was | Gespeichert in |
+|---|---|---|
+| Status | Host online?, laufender Startbefehl, Neustart nötig?, Gefechtsmitglieder, fehlende Endpunkte, letzte Anfragen | – |
+| Battle host | Level/bfid, Modus und Sublevel, Terraform, Licht (Listen aus CATMA), Gefechts-ID/-Name, Teams, Adresse für Clients, Gefechtssuche | `dev_commands.json`, `fake_battle.json` |
+| News & documents | MOTD, Wichtige Nachricht, Patchnotes, Community-Events, EULA … | `responses/documents/*.txt` |
+| ISK market, AUR store | Marktgruppen und Items aus CATMA, je Item an/aus und Preis | `content/market.json`, `content/aur_store.json` |
+| Marketplace start page, Loyalty stores, Login rewards, Wallet | Kacheln, LP-Angebote/-Guthaben, SP/AUR je Login-Tag, ISK/AUR | `content/*.json` |
+
+- **Login:** Token aus `DUST_ADMIN_TOKEN`; ohne Variable erzeugt der Server beim ersten Start
+  `dust_server/state/admin_token.txt` (nicht im Repo) und schreibt den Token ins Konsolen-Log. Im Rechenzentrum
+  den Port nur per Firewall/SSH-Tunnel oder hinter einem TLS-Proxy freigeben.
+- **Optionen:** `--admin-port` / `DUST_ADMIN_PORT` (0 = aus), `--admin-host` / `DUST_ADMIN_HOST`,
+  `DUST_CONTENT_DIR` (statt `dust_server/content/`), `DUST_OFFLINE_SERVICE` (statt `http://127.0.0.1:8090`).
+- **Moduswechsel:** Ein laufender Host stürzt ab, wenn er den Modus wechselt (0x8cb534). Das UI speichert einen
+  anderen Modus deshalb ohne neue Revision und zeigt „Neustart nötig“; der Knopf *Restart host* nutzt
+  `DUST_HOST_CONTROL_DIR` (Watchdog im Docker-Container, Datei `restart`) oder `DUST_HOST_RESTART_CMD`
+  (unter Windows standardmäßig `toolsestart_host.ps1`, startet nur die Host-Instanz neu). Gleicher Modus
+  (Terraform, Licht, Name …) wird mit *Save & apply* sofort als Kartenneustart übernommen.
+- Markt, Store und Wallet lädt der Client einmal pro Login; geänderte Dokumente holt er beim nächsten Login.
+  Käufe werden noch nicht gespeichert.
+
 ## Hinweise
 
 - Dekompilierter CCP-Code, entpackte Archive, Spieldateien und Logs gehören nicht ins Repository

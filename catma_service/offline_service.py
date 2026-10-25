@@ -3,6 +3,7 @@
 #
 #   POST /dispatch  {"method": "Get", "path": "/characters/1/mercenary/skills/", "parameters": {...}, "data": ...}
 #   -> {"found": true, "result": ...} | {"found": true, "error": "<traceback>"} | {"found": false}
+#   GET /catalog  market groups and items with names and base prices (catalog.py)
 import BaseHTTPServer
 import SocketServer
 import json
@@ -51,7 +52,29 @@ def dispatch(method, path, parameters=None, data=None):
         return {'found': True, 'error': traceback.format_exc()}
 
 
+_catalog = []  # built on first request, the CATMA DB does not change while the service runs
+
+
+def catalog():
+    if not _catalog:
+        import catalog as catalogModule
+        with _lock:
+            _catalog.append(json.dumps(catalogModule.Build()))
+    return _catalog[0]
+
+
 class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
+
+    def do_GET(self):
+        if self.path != '/catalog':
+            self.send_error(404)
+            return
+        body = catalog()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.send_header('Content-Length', str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_POST(self):
         request = json.loads(self.rfile.read(int(self.headers.getheader('content-length', 0))))

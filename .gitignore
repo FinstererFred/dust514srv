@@ -7,6 +7,7 @@ dust_server/logs/
 
 # Generated locally: dev TLS key/cert, Python 2.7 conda environment, caches.
 dust_server/certs/
+dust_server/state/
 tools/py27/
 __pycache__/
 *.pyc

@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DUST 514 Admin</title>
+<link rel="icon" href="icon.svg">
+<link rel="stylesheet" href="admin.css">
+<script src="admin.js" defer></script>
+</head>
+<body>
+<div id="login" class="login hidden">
+  <form id="login-form" class="card login-card">
+    <h1>DUST 514 Admin</h1>
+    <p class="muted">The server's admin token (environment variable <code>DUST_ADMIN_TOKEN</code> or
+      <code>dust_server/state/admin_token.txt</code>).</p>
+    <input id="login-token" type="password" autocomplete="current-password" placeholder="Token" required>
+    <button type="submit" class="primary">Log in</button>
+    <p id="login-error" class="error"></p>
+  </form>
+</div>
+
+<div id="app" class="app hidden">
+  <nav class="sidebar">
+    <div class="brand">DUST 514<span>Admin</span></div>
+    <a href="#status" data-page="status">Status</a>
+    <a href="#host" data-page="host">Battle host</a>
+    <a href="#documents" data-page="documents">News &amp; documents</a>
+    <a href="#market" data-page="market">ISK market</a>
+    <a href="#aur" data-page="aur">AUR store</a>
+    <a href="#storefront" data-page="storefront">Marketplace start page</a>
+    <a href="#loyalty" data-page="loyalty">Loyalty stores</a>
+    <a href="#rewards" data-page="rewards">Login rewards</a>
+    <a href="#wallet" data-page="wallet">Wallet</a>
+    <button id="logout" class="link">Log out</button>
+  </nav>
+  <main>
+    <div id="banner" class="banner hidden"></div>
+    <section id="page"></section>
+  </main>
+</div>
+<div id="toast" class="toast hidden"></div>
+</body>
+</html>

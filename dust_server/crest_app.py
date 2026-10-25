@@ -15,7 +15,9 @@ import uuid
 import urllib.parse
 from pathlib import Path
 
+import content
 import offline_bridge
+import server_status
 
 RESPONSES_DIR = Path(__file__).resolve().parent / "responses"
 
@@ -206,10 +208,6 @@ def boosters(req):
     return data
 
 
-# (SP, AUR) reward per consecutive login day; questsClient/welcomeScreen index this list.
-DAILY_LOGIN_REWARDS = [(10000, 0), (15000, 0), (20000, 0), (25000, 0), (30000, 0), (35000, 0), (40000, 50)]
-
-
 @route("GET", r"^/characters/(\d+)/mercenary/private/$")
 def mercenary_private(req):
     data = offline_result(req["path"])
@@ -220,8 +218,9 @@ def mercenary_private(req):
 
 @route("GET", r"^/characters/(\d+)/mercenary/private/dailyquest2/$")
 def daily_quest2_info(req):
-    return {"items": [{"day": day + 1, "spReward": sp, "aurumReward": aur}
-                      for day, (sp, aur) in enumerate(DAILY_LOGIN_REWARDS)]}
+    # (SP, AUR) reward per consecutive login day (content/rewards.json); questsClient/welcomeScreen index this list.
+    return {"items": [{"day": day + 1, "spReward": reward["sp"], "aurumReward": reward["aur"]}
+                      for day, reward in enumerate(content.load("rewards")["daily_login"])]}
 
 
 @route("GET", r"^/corporations/\d+/members/\d+/roles/$")
@@ -296,18 +295,175 @@ def corporation(req):
 @route("GET", r"^/documents/$")
 def documents(req):
     # CCP's offline list lacks "documentType", which the online client needs (documentsClient.py).
+    # The file's modification time in the name makes the client's HTTP cache fetch edited texts.
+    def version(key):
+        path = RESPONSES_DIR / "documents" / f"{key}.txt"
+        return int(path.stat().st_mtime) if path.exists() else 0
     return {"documents": [
-        {"documentKey": key, "documentType": DOCUMENT_TYPE_CDN, "href": f"{req['base']}/cdn/documents/{key}.txt"}
+        {"documentKey": key, "documentType": DOCUMENT_TYPE_CDN,
+         "href": f"{req['base']}/cdn/documents/{key}.{version(key)}.txt"}
         for key in DOCUMENT_KEYS
     ]}
 
 
-@route("GET", r"^/cdn/documents/(\w+)\.txt$")
+@route("GET", r"^/cdn/documents/(\w+?)(\.\d+)?\.txt$")
 def document_content(req):
-    key = re.match(r"^/cdn/documents/(\w+)\.txt$", req["path"]).group(1)
+    key = re.match(r"^/cdn/documents/(\w+?)(\.\d+)?\.txt$", req["path"]).group(1)
     path = RESPONSES_DIR / "documents" / f"{key}.txt"
     body = path.read_bytes() if path.exists() else b""
     return RawResponse(body, "text/plain; charset=utf-8", {"Cache-Control": "max-age=300"})
+
+
+# --- Market, stores and wallet: content/*.json, edited in the web admin (content.py, admin.py) ---------
+
+MARKET_STATION = (60006418, "Ana")  # where CCP's offline character lives (see /locations/60006418/)
+VGS_ACCOUNTS = {1000001: "AUR", 1000012: "LOP"}  # CCP's offline VGS accounts (offlineResourceVGS)
+ISK_ACCOUNT_KEY = 10000  # the character's wallet in CCP's offline account collection
+
+
+def collection(items, **extra):
+    return {"items": items, "totalCount": len(items), "pageCount": 1, **extra}
+
+
+def type_link(req, item):
+    return {"id": item["id"], "href": f"{req['base']}/types/{item['id']}/", "name": item["name"]}
+
+
+def market_group_href(req, group_id):
+    return f"{req['base']}/market/groups/{group_id}/"
+
+
+def items_in_group(req, prices):
+    """(catalog item, price) for the items of `prices` in the market group from ?group= and the groups below it."""
+    cat = content.catalog()
+    group_id = id_from_href(req["query"].get("group"))
+    groups = cat.subtree(group_id) if group_id in cat.groups else None
+    return [(cat.items[type_id], price) for type_id, price in sorted(prices.items())
+            if groups is None or cat.items[type_id]["categoryID"] in groups]
+
+
+@route("GET", r"^/market/groups/$")
+def market_groups(req):
+    # MarketGroupCollection-v1: the whole tree at once (dustMarketClient._LoadGroup links children by parentGroup).
+    cat = content.catalog()
+    hidden = set()
+    for group_id in content.load("market")["hidden_groups"]:
+        hidden |= cat.subtree(group_id)
+    groups = []
+    for group_id in sorted(cat.market_groups() - hidden):
+        group, href = cat.groups[group_id], market_group_href(req, group_id)
+        entry = {"href": href, "name": group["name"], "description": group["description"] or "",
+                 "types": {"href": f"{req['base']}/market/types/?group={href}"}}
+        if group_id != cat.root and group["parent"]:
+            entry["parentGroup"] = {"href": market_group_href(req, group["parent"])}
+        groups.append(entry)
+    return collection(groups)
+
+
+@route("GET", r"^/market/types/$")
+def market_types(req):
+    # MarketTypeCollection-v1; the client takes the type href from here for the sell order lookup.
+    return collection([{"type": type_link(req, item),
+                        "marketGroup": {"href": market_group_href(req, item["categoryID"])}}
+                       for item, _ in items_in_group(req, content.isk_market())])
+
+
+@route("GET", r"^/market/(\d+)/prices/$")
+def market_prices(req):
+    # MarketPriceCollection-v1: what the ISK market lists per group (dustMarketClient._LoadRoughBestPrices).
+    return collection([{"type": type_link(req, item), "price": price}
+                       for item, price in items_in_group(req, content.isk_market())])
+
+
+@route("GET", r"^/market/(\d+)/orders/sell/$")
+def market_sell_orders(req):
+    # MarketOrderCollection-v1 for ?type=: one endless order at the listed price (GetPriceByTypeID, buy orders).
+    type_id = id_from_href(req["query"].get("type"))
+    price = content.isk_market().get(type_id)
+    if not price:
+        return collection([])
+    station_id, station_name = MARKET_STATION
+    return collection([{
+        "type": type_link(req, content.catalog().items[type_id]), "price": price, "volume": 1000000, "buy": False,
+        "location": {"id": station_id, "href": f"{req['base']}/stations/{station_id}/", "name": station_name},
+        "range": "station", "duration": 365,
+    }])
+
+
+def aur_offer(req, item, price):
+    # VgsOffer as read by dust/crestdata/vgsData2.py; one product with quantity 1 makes it a plain offer.
+    return {"id": item["id"], "href": f"{req['base']}/offers/{item['id']}/", "name": item["name"],
+            "description": item["description"] or "", "imageUrl": "", "price": price,
+            "basePrice": item["baseAurPrice"] or price, "endDate": None, "tags": [],
+            "products": [{"id": item["id"], "href": f"{req['base']}/products/{item['id']}/", "typeId": item["id"],
+                          "groupId": item["categoryID"], "quantity": 1}]}
+
+
+@route("GET", r"^/stores/2/offers/$")
+def aur_store_offers(req):
+    cat = content.catalog()
+    return collection([aur_offer(req, cat.items[type_id], price)
+                       for type_id, price in sorted(content.aur_store().items())], currentPage=1)
+
+
+@route("GET", r"^/dust/storefront/(\d+)/$")
+def storefront(req):
+    # Storefront-v2, the market's start page; without an own layout CCP's offline one.
+    return content.load("storefront")["layout"] or offline_result(req["path"])
+
+
+@route("GET", r"^/dust/asset/loyaltyStores/$")
+def loyalty_stores(req):
+    # DustLoyaltyStoreCollection-v1 (loyaltyStoreClient._LoadStores); the balance is the corporation's LP.
+    stores = content.load("loyalty")["stores"]
+    cat = content.catalog()
+    items = []
+    for corp, group_id in content.LOYALTY_STORES.items():
+        # CCP's offline data answers every corporation id with the same NPC corporation; the market group
+        # of each store carries the faction's name.
+        corporation = {"id": corp, "name": cat.groups[group_id]["name"], "href": f"{req['base']}/corporations/{corp}/"}
+        href = f"{req['base']}/dust/asset/loyaltyStores/{corp}/"
+        items.append({"href": href, "id": corp, "corporation": corporation,
+                      "balance": (stores.get(str(corp)) or {}).get("balance", 0), "offers": {"href": f"{href}offers/"}})
+    return collection(items)
+
+
+@route("GET", r"^/dust/asset/loyaltyStores/(\d+)/offers/$")
+def loyalty_store_offers(req):
+    corp = int(re.match(r"^/dust/asset/loyaltyStores/(\d+)/offers/$", req["path"]).group(1))
+    cat = content.catalog()
+    href = f"{req['base']}/dust/asset/loyaltyStores/{corp}/offers/"
+    return collection([{"href": f"{href}{type_id}/", "type": type_link(req, cat.items[type_id]),
+                        "lpCost": lp, "iskCost": isk, "quantity": 1}
+                       for type_id, lp, isk in content.loyalty_offers().get(corp, []) if type_id in cat.items])
+
+
+def isk_account(req, owner_id, key, wallet):
+    href = f"{req['base']}/accounts/{owner_id}/{key}/"
+    return {"href": href, "id": key, "balance": wallet["isk"], "transactions": f"{href}transactions/"}
+
+
+@route("GET", r"^/accounts/(\d+)/$")
+def account(req):
+    account_id = int(re.match(r"^/accounts/(\d+)/$", req["path"]).group(1))
+    wallet = content.load("wallet")
+    currency = VGS_ACCOUNTS.get(account_id)
+    if currency:
+        # VgsAccount-v1 (aurumClient via vgsData2.GetAccount); CCP's offline routes answer it with the ISK collection.
+        if currency == "AUR":
+            balance = wallet["aur"]
+        else:
+            balance = sum(store.get("balance", 0) for store in content.load("loyalty")["stores"].values())
+        return {"id": account_id, "currency": currency, "balance": balance, "freeBalance": balance, "totalSpent": 0,
+                "href": f"{req['base']}{req['path']}", "transactions": {"href": f"{req['base']}{req['path']}transactions/"}}
+    # A character's accounts (myCharactersClient._GetAccountIfNeeded), the wallet first.
+    return collection([isk_account(req, account_id, ISK_ACCOUNT_KEY, wallet)])
+
+
+@route("GET", r"^/accounts/(\d+)/(\d+)/$")
+def character_account(req):
+    owner_id, key = map(int, re.match(r"^/accounts/(\d+)/(\d+)/$", req["path"]).groups())
+    return isk_account(req, owner_id, key, content.load("wallet"))
 
 
 # --- Experiment 1: a fake battle (docs/battle_feasibility.md) -------------------------------------
@@ -361,10 +517,12 @@ def fake_battle(req, config):
 
 @route("GET", r"^/battles/theatres/$")
 def battle_theatres(req):
-    if not fake_battle_config():
+    config = fake_battle_config()
+    if not config:
         return offline_result(req["path"])
     # No "queue" key: uiSvcBattle.OnSelect then joins a listed battle instead of a matchmaking queue.
-    return {"items": [{"key": "public", "name": "Lokale Gefechte", "description": "Testgefecht des lokalen Servers",
+    return {"items": [{"key": "public", "name": config.get("theatre_name", "Lokale Gefechte"),
+                       "description": config.get("theatre_description", "Testgefecht des lokalen Servers"),
                        "icon": {"href": f"{req['base']}/images/theatres/public.png"},
                        "regions": [{"id": "local"}]}]}
 
@@ -460,6 +618,7 @@ def listen_battle_members(req):
     # Polled by the listen-server host (client_patch/dustdevhook.py), which registers new credentials.
     # The host's Python does not run while it loads a map, so a poll also means the map is up: send the
     # joining clients their OnBattleMemberConnect now (a client connecting mid-load crashes the host).
+    server_status.host_members_polled()
     with LISTEN_LOCK:
         for member in LISTEN_MEMBERS:
             pending = PENDING_CONNECTS.pop(member["credential"], None)
@@ -481,10 +640,16 @@ DEV_COMMANDS_DIR = Path(__file__).resolve().parent
 def dev_commands(req):
     # Polled by client_patch/dustdevhook.py; the client runs the commands once per new revision.
     # A second client talks to port 8081 (multiplayer test) and gets dev_commands_8081.json.
-    path = DEV_COMMANDS_DIR / ("dev_commands_8081.json" if req["base"].endswith(":8081") else "dev_commands.json")
+    second_client = req["base"].endswith(":8081")
+    path = DEV_COMMANDS_DIR / ("dev_commands_8081.json" if second_client else "dev_commands.json")
     if not path.exists():
         return {"revision": 0, "commands": []}
-    return json.loads(path.read_text(encoding="utf-8-sig"))
+    data = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not second_client:
+        start = next((c["arg"] for c in data.get("commands", [])
+                      if c.get("action") == "ue3" and str(c.get("arg", "")).startswith("Start ")), None)
+        server_status.host_polled(data.get("revision"), start)
+    return data
 
 
 def parse_body(headers, body):
