@@ -190,6 +190,7 @@ Right-click DUST 514 → *Create Custom Configuration* (or *Change Custom Config
 | Network | IP/Hosts switches | `crest.eveonline.com=<server>&&dust.dyn.ccpgamescdn.com=<server>` |
 | GPU | Renderer | Vulkan |
 | Advanced | Write Color Buffers | on (fixes lighting artifacts) |
+| Advanced | Read Depth Buffer, Write Depth Buffer | on (clouds, fog and glow no longer cover the scene) |
 
 Replace `<server>` with the server's IP address. For a server on the same PC that's `127.0.0.1`.
 
@@ -235,9 +236,15 @@ rpcs3 --no-gui <path to EBOOT.BIN> -- -autologinserver=<server>:8080 -autologinc
 | Battle not listed in the battle finder | Host not running yet: check *Status* in the web admin or `docker compose logs host` |
 | "Your connection to the host has been lost" | UDP 7777 is not reachable from the client, or the battle finder hands out the wrong address (web admin → *Battle host*) |
 | Light streaks and banding on the map | Turn on *Write Color Buffers* |
+| Cloud layer or a blue glow drawn in front of everything | Turn on *Read Depth Buffer* and *Write Depth Buffer* |
+| Flickering white dashes on lit floors | Known RPCS3 issue, no setting fixes it yet (see below) |
 
 ## Current limitations
 
+- White dashes flicker on lit floors and move with the camera. None of these RPCS3 settings helped: Handle RSX
+  Memory Tiling, Strict Texture Flushing, Shader Precision Ultra (large FPS loss), SPU XFloat Accurate, Strict
+  Rendering Mode. Accurate RSX reservation access together with Accurate SPU DMA crashes the game in the merc
+  quarters, and with OpenGL the game crashed when joining the battle.
 - Tested with two players: the host plus one client. More players and long sessions are untested.
 - All players use CCP's offline characters. Purchases and progress are not saved yet.
 - Switching the game mode needs a host restart (about 100 seconds), and players have to rejoin.

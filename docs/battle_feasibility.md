@@ -420,6 +420,16 @@ Start MN_Craters01?gametype=gamemode_ambush_32p?gameModeLevel=MN_Craters01_BG01_
 Nachtrag: Die Lichtartefakte (gestrichelte helle Bänder auf Böden und Rampen, seltsame Wolken bzw. Nebel) treten
 auch mit `Write Color Buffers` weiter auf. Die Ursache ist noch offen.
 
+Nachtrag 2 (2026-10-26): **`Read Depth Buffer: true`** und **`Write Depth Buffer: true`** beheben die Wolkendecke,
+die über allen 3D-Ebenen lag, und das blaue Leuchten hinter der Karte. Die Unreal Engine 3 rendert Nebel, Wolken und
+Bloom gegen eine Kopie des Tiefenpuffers, die ohne diese Optionen fehlt. Die weißen Striche auf beleuchteten Böden
+bleiben. Sie richten sich nach der Fläche und verteilen sich bei jeder Bewegung neu. Ohne Wirkung blieben:
+`Handle RSX Memory Tiling`, `Strict Texture Flushing`, `Shader Precision: Ultra` (starker FPS-Einbruch),
+`SPU XFloat Accuracy: Accurate` und `Strict Rendering Mode`. `Accurate RSX reservation access` zusammen mit
+`Accurate SPU DMA` lässt das Spiel zuverlässig in den Merc Quarters abstürzen, mit OpenGL stürzte es beim Betreten
+des Matches ab. Die Striche sind vorerst zurückgestellt und ein Fall für die RPCS3-Entwickler.
+Sicherung vor diesen Tests: `config_NPUB30643.yml.before_gfx_test`.
+
 ### Ergebnis Experiment 5: Dev-Controller und Gegner (2026-10-24)
 
 Analyse von `DUSTGAME.XXX` mit eigenen Lesern für Namen, Exporte, Importe und Funktionsflags
