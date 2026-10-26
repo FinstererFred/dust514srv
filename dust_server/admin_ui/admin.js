@@ -265,8 +265,14 @@ async function pageHost(el) {
   const [data, cat] = await Promise.all([api("/api/host"), loadCatalog()]);
   const s = clone(data.settings);
   const tested = data.tested_modes;
-  const levels = cat.levels.slice().sort((a, b) => (b.productionReady - a.productionReady) || a.map.localeCompare(b.map) || a.typeName.localeCompare(b.typeName));
-  const levelLabel = (l) => `${l.name || l.typeName} – ${l.map} (${l.id})${l.productionReady ? "" : " · unfinished"}`;
+  // Live combinations: CATMA marks them production ready and used in matchmaking. The rest are test maps,
+  // copies, 48p variants and sublevels that never ran in the live game.
+  const official = (m) => m.productionReady && m.matchmaking;
+  const officialLevel = (l) => l.modes.some(official);
+  let showAll = false;
+  const levels = cat.levels.slice().sort((a, b) => (officialLevel(b) - officialLevel(a)) || a.map.localeCompare(b.map) || a.typeName.localeCompare(b.typeName));
+  const levelLabel = (l) => `${l.name || l.typeName} – ${l.map} (${l.id})${officialLevel(l) ? "" : l.productionReady ? " · not in live matchmaking" : " · unfinished"}`;
+  const modeLabel = (m) => official(m) ? "" : m.productionReady ? " · not in live matchmaking" : " · unfinished";
   const gameTypeName = (id) => { const t = cat.gameTypes.get(id); return t ? (t.name || t.typeName) : String(id); };
 
   const levelSel = h("select");
@@ -289,26 +295,37 @@ async function pageHost(el) {
     if (!level) return;
     s.map = level.map;
     customMap.value = s.map;
-    const modes = level.modes.map((m, i) => {
-      const t = cat.gameTypes.get(m.gameType) || {};
-      const status = tested[m.level] ? ` · ${tested[m.level]}` : "";
-      return [i, `${gameTypeName(m.gameType)} – ${m.level}${m.productionReady ? "" : " · unfinished"}${status}`];
-    });
     let current = level.modes.findIndex((m) => m.level === s.game_mode_level && (cat.gameTypes.get(m.gameType) || {}).typeName === s.game_type);
-    if (current < 0 && !keepMode) {
-      // Initial load with values that are not in the level's list: keep them.
-      fillOptions(modeSel, [[-1, `custom values: ${s.game_type} / ${s.game_mode_level}`], ...modes], -1);
-    } else {
-      if (current < 0) current = level.modes.findIndex((m) => (cat.gameTypes.get(m.gameType) || {}).typeName === s.game_type);
-      if (current < 0) current = Math.max(0, level.modes.findIndex((m) => m.productionReady));
-      fillOptions(modeSel, modes, current);
-      applyMode(level.modes[current], !keepMode);
+    if (current < 0 && keepMode) {
+      const pick = (pred) => level.modes.findIndex((m) => (showAll || official(m)) && pred(m));
+      current = pick((m) => (cat.gameTypes.get(m.gameType) || {}).typeName === s.game_type);
+      if (current < 0) current = pick(() => true);
+      if (current < 0) current = 0;
     }
+    fillModes(level, current);
+    if (current >= 0) applyMode(level.modes[current], !keepMode);
     fillOptions(terraformSel, level.terraforming.map((t) => [t, t]), s.terraform);
     if (!level.terraforming.includes(s.terraform)) { s.terraform = level.terraforming[0] || s.terraform; terraformSel.value = s.terraform; }
     const lighting = [[data.tested_lighting, `${data.tested_lighting} (tested)`], ...level.moods.map((m) => [m, `${m} (untested)`])];
     if (!lighting.some(([v]) => v === s.lighting)) lighting.push([s.lighting, s.lighting]);
     fillOptions(lightingSel, lighting, s.lighting);
+  }
+
+  function fillLevels() {
+    // The selected level stays in the list even if it is not a live one.
+    fillOptions(levelSel, levels.filter((l) => showAll || officialLevel(l) || l.id === Number(s.bfid)).map((l) => [l.id, levelLabel(l)]), s.bfid);
+    if (!levelFor()) levelSel.prepend(h("option", { value: s.bfid, text: `bfid ${s.bfid} (not in the catalog)` })), levelSel.value = s.bfid;
+  }
+
+  function fillModes(level, current) {
+    // The selected mode stays in the list even if it is not a live combination.
+    const modes = level.modes.map((m, i) => [m, i]).filter(([m, i]) => showAll || official(m) || i === current).map(([m, i]) => {
+      const status = tested[m.level] ? ` · ${tested[m.level]}` : "";
+      return [i, `${gameTypeName(m.gameType)} – ${m.level}${modeLabel(m)}${status}`];
+    });
+    // Initial load with values that are not in the level's list: keep them.
+    if (current < 0) modes.unshift([-1, `custom values: ${s.game_type} / ${s.game_mode_level}`]);
+    fillOptions(modeSel, modes, current);
   }
 
   function applyMode(mode, keepName = false) {
@@ -325,8 +342,12 @@ async function pageHost(el) {
     applyModeInfo();
   }
 
-  fillOptions(levelSel, levels.map((l) => [l.id, levelLabel(l)]), s.bfid);
-  if (!levelFor()) levelSel.prepend(h("option", { value: s.bfid, text: `bfid ${s.bfid} (not in the catalog)` })), levelSel.value = s.bfid;
+  fillLevels();
+  const showAllBox = checkbox(showAll, (v) => {
+    showAll = v;
+    fillLevels();
+    if (levelFor()) fillModes(levelFor(), Number(modeSel.value));
+  }, "also list combinations that never ran in live matchmaking (test maps, copies, 48p, unfinished)");
   levelSel.addEventListener("change", () => { s.bfid = Number(levelSel.value); refreshLevel(true); });
   modeSel.addEventListener("change", () => { if (Number(modeSel.value) >= 0) applyMode(levelFor().modes[Number(modeSel.value)]); });
   terraformSel.addEventListener("change", () => { s.terraform = terraformSel.value; });
@@ -355,6 +376,7 @@ async function pageHost(el) {
     h("div", { class: "card" }, h("h2", { text: "Map and mode" }),
       h("div", { class: "form" },
         field("Level (bfid)", levelSel),
+        field("Unofficial", showAllBox, "By default only the map and mode combinations of the live game (CATMA: production ready and used in matchmaking)."),
         field("Mode", h("div", {}, modeSel, modeInfo)),
         field("Terraform", terraformSel),
         field("Lighting", lightingSel, "Only MOOD_DAY has been tested with the listen server so far."),

@@ -749,6 +749,50 @@ mit dem Host in `D:\rpcs3`:
 - Ein Neustart des CREST-Servers trennt laufende Clients (Benachrichtigungsstream unbekannt →
   `NOTIFICATION_STREAM_DISCONNECTED`).
 
+### Live-Kombinationen und Kollision fern vom Host (2026-10-26)
+
+**Karten und Modi der Live-Version.** CATMA (`GalaxyLevel.gameModes`) markiert jede Kombination mit
+`mProductionReady` und `useInMatchmaking`. Sind beide gesetzt, lief sie im Matchmaking (18 von 33 Levels, z. B.
+Impact Ridge mit Ambush `AmbA`, Ambush OMS, Domination `DomB`, Skirmish `SkB`). Nie live waren Testmaps, die
+`_dup`-Kopien ohne Namen (Ausnahme: `level_highland_bg_1_dup`/`_dup1` tragen beide Flags), alle 48p-Varianten,
+Craters BG01 `DomA`/`SkA`, Highland BG02 `SkA`, Ambush OMS auf Highland, SandBox, Valley und ShipInterior. Die
+Host-Seite im Admin zeigt deshalb nur noch Live-Kombinationen; das Kästchen „Unofficial“ blendet den Rest ein.
+In Ambush gibt es keine festen Spawnpunkte: Man setzt per Smart Deploy (Triangle) an einer vom System gewählten
+Stelle ab oder an Drop Uplinks. Das ist so gewollt.
+
+**Sockel-Belegung.** Eine Karte hat Sockel für Bauten (Craters: 45 klein, 12 mittel, `OP01`/`OP03` groß). Der
+Dedicated Server bekam deren Belegung aus seiner `launchconfig`-INI, Abschnitt `[sockets]`
+(`DustTeamGame.LoadSockets` → `DustServerConfig.GetSection` → `battleServer.GetConfigSection`). `DustServerConfig`
+fragt aber nur bei `NetMode == 1` (Dedicated) nach, auf dem Listen-Server kommt nichts an. Mit `loadDefaultOutpost`
+laden die Sockel die Vorgabe des Karteneditors. Für Impact Ridge ändert das nichts: Dort gibt es laut CATMA nur
+`Backdrop01` (Stargate) und `OP03` (Vorgabe `OP_GA_Research01L` = erster CATMA-Kandidat). Auf Karten mit kleinen
+und mittleren Sockeln (z. B. Highland) bleiben diese bei uns vermutlich leer.
+
+**Problem: falsche Kollision fern vom Host (bestätigt).** Client 2 spawnt teils in Geometrie (kann dann nicht
+springen), immer an denselben Stellen, und fällt beim Laufen einen Meter unter die sichtbare Karte. Der Host selbst
+hat diese Fehler nicht. Läuft die Host-Figur zu Client 2, stimmt die Kollision dort; spawnt der Host danach woanders,
+fällt Client 2 sofort durch die Karte.
+
+Ursache: Jeder Outpost besteht aus einem groben Paket (`OP_GA_RESEARCH01L.XXX`) und der vollen Detailstufe mit
+genauer Kollision (`OP_GA_RESEARCH01L_LOD0_TF-DESERT01.XXX`). Position und Kollision rechnet der Server. Ein
+Listen-Server der Unreal Engine 3 streamt nur um den Blickpunkt seines eigenen Spielers, fern davon gilt die grobe
+Kollision. Client 2 sieht die volle Detailstufe, weil sein Client sie lädt. Vor dem Spawn verschiebt
+`DustPlayerController.ServerTriggerStreaming` zwar den Controller zum Spawnpunkt, gewartet wird aber nur auf das
+Streaming des Clients (`ClientStartCheckStreaming` → `CheckStreamingStatus` → `ServerOnStreamingFinished`). Der
+Docker-Host ist genauso betroffen. Die UE3-Streaming-Befehle (`StreamLevelIn`, `OnlyLoadLevel` …) fehlen im
+Release-Build. Der Namensbaustein `_LOD0` steht genau einmal als ASCII-String in der EBOOT.
+
+**Entscheidung: beim Listen-Server bleiben** und ihn per RPCS3-Patch so ändern, dass der Host `_LOD0` lädt wie der
+Dedicated Server im Live-Spiel. Ein eigener Server bräuchte dieselbe Kollision (Pakete lesen, UE3-Bewegungsphysik)
+und dazu die Replikation aller DustGame-Klassen, das sind Mannjahre. Nächste Schritte:
+1. Ghidra: Verweise auf den String `_LOD0` suchen und herausfinden, wann ein Outpost seine `_LOD0`-Ebene lädt.
+2. Variante 1 testen: Der Host lädt `_LOD0` aller Outposts unabhängig von seiner Position. Risiko: 256 MB RAM der
+   PS3. Speicher messen, auch auf dem Docker-Host mit Null-Renderer.
+3. Falls der Speicher nicht reicht, Variante 2: zusätzlich um die Positionen der anderen Spieler streamen (mehrere
+   Blickpunkte wie im Splitscreen).
+Abbruchkriterium: Die Entscheidung ist im nativen Code nicht zu finden, oder der Speicher reicht auch für Variante 2
+nicht. Dann den eigenen Server neu bewerten.
+
 ### Parallel: EBOOT-Analyse mit Ghidra (in Absprache)
 
 Gezielte Fragen an die entschlüsselte EBOOT:
