@@ -420,6 +420,8 @@ async function pageDocuments(el) {
 
 // --- ISK market and AUR store ---------------------------------------------------------------------
 
+const LOYALTY_ROOT_GROUP = 365995;  // content.LOYALTY_ROOT_GROUP; the AUR store leaves these LP items out
+
 async function pageMarket(el, kind) {
   const isk = kind === "isk";
   const name = isk ? "market" : "aur_store";
@@ -432,12 +434,12 @@ async function pageMarket(el, kind) {
   const PAGE = 100;
 
   function excludedSet() {
-    return new Set(isk ? cfg.excluded_groups.flatMap((g) => [...cat.subtree(g)]) : []);
+    return new Set(isk ? cfg.excluded_groups.flatMap((g) => [...cat.subtree(g)]) : cat.subtree(LOYALTY_ROOT_GROUP));
   }
   function state(item, excluded, hidden) {
     // Mirrors content.isk_market / content.aur_store for unsaved changes.
     const o = cfg.items[item.id] || {};
-    const def = isk ? item.basePrice > 0 && !item.baseAurPrice && !excluded.has(item.categoryID) : item.baseAurPrice > 0;
+    const def = isk ? item.basePrice > 0 && !item.baseAurPrice && !excluded.has(item.categoryID) : item.baseAurPrice > 0 && !excluded.has(item.categoryID);
     const price = o.price || base(item);
     const enabled = o.enabled ?? def;
     const on = cfg.enabled && enabled && price > 0 && cat.marketGroups.has(item.categoryID) && !hidden.has(item.categoryID);

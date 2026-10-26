@@ -28,7 +28,7 @@ LOYALTY_ROOT_GROUP = 365995
 DEFAULTS = {
     # ISK market: every item with a base price that is not an AUR item, outside the loyalty store groups.
     "market": {"enabled": True, "excluded_groups": [LOYALTY_ROOT_GROUP], "hidden_groups": [], "items": {}},
-    # AUR store (VGS): every item with a base AUR price.
+    # AUR store (VGS): every item with a base AUR price, outside the loyalty store groups (those cost LP).
     "aur_store": {"enabled": True, "items": {}},
     # Loyalty stores: balance per corporation; offers only where set by hand ({"<typeID>": {"lp", "isk"}}).
     "loyalty": {"stores": {str(corp): {"balance": 0, "offers": {}} for corp in LOYALTY_STORES}},
@@ -132,13 +132,15 @@ def aur_store(config=None):
         return {}
     cat = catalog()
     in_market = cat.market_groups()
+    loyalty = cat.subtree(LOYALTY_ROOT_GROUP)
     prices = {}
     for item in cat.items.values():
         if item["categoryID"] not in in_market:
             continue
+        default = item["baseAurPrice"] > 0 and item["categoryID"] not in loyalty
         override = _override(config["items"], item["id"])
         price = override.get("price") or item["baseAurPrice"]
-        if override.get("enabled", item["baseAurPrice"] > 0) and price > 0:
+        if override.get("enabled", default) and price > 0:
             prices[item["id"]] = price
     return prices
 
