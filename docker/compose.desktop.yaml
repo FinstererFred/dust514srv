@@ -2,7 +2,6 @@
 # host, so players never get an answer from the listen server. Instead, all three services share one network
 # namespace (the host service's), which keeps 127.0.0.1 working between them, and the ports are published.
 #   docker compose -f compose.yaml -f compose.desktop.yaml up -d
-# RPCN on the Windows host is reachable from the containers as host.docker.internal.
 
 services:
   host:
@@ -22,5 +21,9 @@ services:
     depends_on: !reset [host, catma]
 
   catma:
+    network_mode: service:host
+    depends_on: !reset [host]
+
+  rpcn:
     network_mode: service:host
     depends_on: !reset [host]

@@ -7,6 +7,9 @@ creating the file $CONTROL_DIR/restart (the web admin does this after a game-mod
 running host cannot do in place). $CONTROL_DIR/stop stops the host until the file is removed.
 The current state is written to $CONTROL_DIR/status.json.
 
+Before each start the watchdog waits until the RPCN server from rpcn.yml answers and creates the host's
+account there if it is missing (the game hangs at the PSN sign-in without it).
+
 Environment (defaults in brackets):
   HOST_GAME_ARGS     arguments for the game  [-autologinserver=127.0.0.1:8080 -autologincharindex=0]
   RPCS3_EXTRA_ARGS   extra RPCS3 options, e.g. "--stdout"  []
@@ -16,12 +19,16 @@ Environment (defaults in brackets):
   HEARTBEAT_URL      CREST endpoint with the age of the game's last poll, "" = off
                      [http://127.0.0.1:8080/dev/host/heartbeat/]
   HEARTBEAT_TIMEOUT  seconds without a game poll (after the first one) before a restart  [120]
+  RPCN_CHECK         "0" = start RPCS3 without waiting for RPCN  [1]
 """
 
 import json
 import os
 import shlex
 import signal
+import socket
+import ssl
+import struct
 import subprocess
 import sys
 import time
@@ -32,6 +39,7 @@ CONFIG_HOME = Path(os.environ.get("XDG_CONFIG_HOME", "/data/config")) / "rpcs3"
 CACHE_HOME = Path(os.environ.get("XDG_CACHE_HOME", "/data/cache")) / "rpcs3"
 EBOOT = CONFIG_HOME / "dev_hdd0/game/NPUB30643/USRDIR/EBOOT.BIN"
 RPCS3_LOG = CACHE_HOME / "RPCS3.log"
+RPCN_CONFIG = CONFIG_HOME / "rpcn.yml"
 
 GAME_ARGS = os.environ.get("HOST_GAME_ARGS", "-autologinserver=127.0.0.1:8080 -autologincharindex=0")
 EXTRA_ARGS = os.environ.get("RPCS3_EXTRA_ARGS", "")
@@ -40,7 +48,9 @@ STARTUP_GRACE = int(os.environ.get("STARTUP_GRACE", "1200"))
 HANG_TIMEOUT = int(os.environ.get("HANG_TIMEOUT", "180"))
 HEARTBEAT_URL = os.environ.get("HEARTBEAT_URL", "http://127.0.0.1:8080/dev/host/heartbeat/")
 HEARTBEAT_TIMEOUT = int(os.environ.get("HEARTBEAT_TIMEOUT", "120"))
+RPCN_CHECK = os.environ.get("RPCN_CHECK", "1") != "0"
 HEARTBEAT_EVERY = 10
+RPCN_RETRY = 5
 STOP_TIMEOUT = 20
 POLL = 2
 
@@ -81,6 +91,75 @@ def heartbeat_age():
             return json.load(response).get("age")
     except (OSError, ValueError):
         return None
+
+
+def rpcn_settings():
+    """Host, port, NPID and password from RPCS3's rpcn.yml (flat "Key: value" lines, password in plain text)."""
+    values = {}
+    for line in RPCN_CONFIG.read_text(encoding="utf-8").splitlines():
+        key, sep, value = line.partition(":")
+        if sep and not line[:1].isspace():
+            values[key.strip()] = value.strip().strip('"')
+    host, _, port = values.get("Host", "").rpartition(":")
+    return host, int(port or 31313), values.get("NPID", ""), values.get("Password", "")
+
+
+def rpcn_packet(sock, n):
+    data = b""
+    while len(data) < n:
+        chunk = sock.recv(n - len(data))
+        if not chunk:
+            raise ConnectionError("RPCN closed the connection")
+        data += chunk
+    return data
+
+
+def rpcn_ensure_account():
+    """Creates the host's RPCN account (protocol as in research/rpcn/create_account.py).
+
+    Returns None when the account exists now, otherwise why not. RPCN closes the connection after a
+    Create, so this costs one connection per start.
+    """
+    try:
+        host, port, npid, password = rpcn_settings()
+    except (OSError, ValueError) as e:
+        return f"{RPCN_CONFIG} unreadable: {e}"
+    if not host or not npid or not password:
+        return f"{RPCN_CONFIG} lacks Host, NPID or Password"
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # RPCN's certificate is self-signed
+    # Create: npid, password, online name, avatar URL, email (NUL-terminated); header type u8, command u16,
+    # size u32, packet id u64, little endian
+    body = b"".join(s.encode() + bytes(1) for s in (npid, password, npid, "https://rpcs3.net/cdn/netplay/DefaultAvatar.png",
+                                                  f"{npid.lower()}@dust514.invalid"))
+    try:
+        with socket.create_connection((host, port), timeout=5) as raw, ctx.wrap_socket(raw) as sock:
+            for _ in range(2):  # server info, then the answer to Create
+                if _:
+                    sock.sendall(struct.pack("<BHIQ", 0, 2, 15 + len(body), 1) + body)
+                size = struct.unpack("<BHIQ", rpcn_packet(sock, 15))[2]
+                payload = rpcn_packet(sock, size - 15)
+    except OSError as e:
+        return f"RPCN at {host}:{port} unreachable: {e}"
+    error = payload[0] if payload else None
+    if error == 0:
+        log(f"created RPCN account {npid}")
+    # 11 = CreationExistingUsername, 13 = CreationExistingEmail
+    return None if error in (0, 11, 13) else f"RPCN refused account {npid} (error {error})"
+
+
+def wait_for_rpcn(restarts):
+    reported = None
+    while not _terminating and not (CONTROL_DIR / "stop").exists():
+        problem = rpcn_ensure_account()
+        if problem is None:
+            return
+        if problem != reported:
+            log(f"waiting for RPCN: {problem}")
+            reported = problem
+        write_status(state="waiting", reason=problem, restarts=restarts)
+        time.sleep(RPCN_RETRY)
 
 
 def start_rpcs3():
@@ -172,6 +251,10 @@ def main():
             time.sleep(POLL)
             continue
 
+        if RPCN_CHECK:
+            wait_for_rpcn(restarts)
+            if _terminating or (CONTROL_DIR / "stop").exists():
+                continue
         started = time.time()
         reason = run_once(restarts)
         log(f"RPCS3 ended: {reason}")

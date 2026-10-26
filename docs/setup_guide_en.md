@@ -21,9 +21,10 @@ database.
 | `host` | RPCS3 (built from source with our patches) running the battle map, plus a watchdog that restarts it | UDP 7777 |
 | `crest` | Backend for all clients (CREST API, battle finder) and the web admin | TCP 8080, 80, 443; TCP 8088 (admin) |
 | `catma` | Game data service (internal only) | 127.0.0.1:8090 |
+| `rpcn` | RPCN server the host signs in to (internal only). Players keep their own RPCN account, for example on the official server | 127.0.0.1:31313 |
 
-The images contain no game files and no CCP code. The game, firmware, license and RPCN account are provided as a
-data folder on the server.
+The images contain no game files and no CCP code. The game, firmware and license are provided as a data folder
+on the server.
 
 ---
 
@@ -39,8 +40,6 @@ data folder on the server.
 - **A Windows PC with a working local installation** of DUST 514 in RPCS3, prepared as described in the
   repository's `README.md` (game 03.19, patched `COMMON.SDAT`, EdgeZlib patch, extracted client modules in
   `research\extracted_0319`). The data folder for the server is exported from it.
-- **An RPCN account for the host.** It must be a separate account. RPCN does not allow the same account to be
-  logged in twice, so don't use the one you play with.
 
 ### 1.2 Create the data folder (on the Windows PC)
 
@@ -48,19 +47,12 @@ The export collects everything the server needs: the game with our client patch,
 the game patches, a Null-renderer configuration and the extracted client modules for the `catma` service.
 
 ```powershell
-tools\export_host_data.ps1 -Out E:\dust514-data -RpcnConfig <path to the host account's rpcn.yml>
+tools\export_host_data.ps1 -Out E:\dust514-data
 ```
 
-- An `rpcn.yml` is created by RPCS3 once you log in to RPCN with an account (*Configuration → RPCN*). Log the host
-  account in once in a separate RPCS3 copy, or write the file by hand:
-
-  ```yaml
-  Version: 2
-  Host: np.rpcs3.net
-  NPID: <host account name>
-  Password: <password>
-  Token: ""
-  ```
+- On the first run the script writes an `rpcn.yml` for the host account `DustHost` with a random password
+  (`-RpcnNpid` picks another name). The account lives on the stack's own RPCN server, and the watchdog creates it
+  there on the first start.
 
 - In the copied game folder,
   `rpcs3/config/rpcs3/dev_hdd0/game/NPUB30643/USRDIR/DUSTGAME/SAKE.INI` must point to the server itself:
@@ -184,7 +176,8 @@ Each player needs a PC that runs DUST 514 in RPCS3 (Windows or Linux, a GPU with
 ### 2.2 RPCN account
 
 Every player needs their own RPCN account: *Configuration → RPCN*, create the account and log in. The game
-needs a PSN connection to start, and RPCN provides it.
+needs a PSN connection to start, and RPCN provides it. The official RPCN server is fine; it does not have to be
+the one the battle host uses.
 
 ### 2.3 Game configuration in RPCS3
 

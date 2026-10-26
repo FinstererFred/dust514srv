@@ -3,13 +3,12 @@
 # RPCS3 config for a headless Null-renderer host, and the extracted client modules for catma_service.
 # Copy the result to the server (e.g. scp -r / rsync) as $DUST_DATA.
 #   .\export_host_data.ps1 -Out E:\dust514-data
-#   .\export_host_data.ps1 -Out E:\dust514-data -RpcnConfig D:\rpcs3_host\config\rpcn.yml
-# The host needs its own RPCN account (one account cannot be logged in twice). Without -RpcnConfig,
-# put an rpcn.yml for that account into <Out>\rpcs3\config\rpcs3\ yourself.
+# The host signs in to the stack's own RPCN (docker/rpcn, 127.0.0.1:31313); its watchdog creates the account
+# there. rpcn.yml is written once with a random password and on later runs only pointed at that server.
 param(
     [Parameter(Mandatory)][string]$Out,
     [string]$Rpcs3 = "D:\rpcs3",
-    [string]$RpcnConfig = ""
+    [string]$RpcnNpid = "DustHost"
 )
 $ErrorActionPreference = "Stop"
 $root = Split-Path -Parent $PSScriptRoot
@@ -34,12 +33,22 @@ $cfg = $cfg -replace '(?m)^(  Frame limit: ).*$', '${1}Auto'        # the flip p
 $cfg = $cfg -replace '(?m)^(Audio:\r?\n(?:  .*\r?\n)*?  Renderer: ).*$', '${1}"Null"'
 [IO.File]::WriteAllText("$target\custom_configs\config_NPUB30643.yml", $cfg, (New-Object Text.UTF8Encoding $false))
 
-if ($RpcnConfig) { Copy-Item $RpcnConfig "$target\rpcn.yml" }
+$rpcnYml = "$target\rpcn.yml"
+$rpcnHost = "127.0.0.1:31313"
+if (Test-Path $rpcnYml) {
+    $yml = Get-Content $rpcnYml -Raw
+    $yml = $yml -replace '(?m)^Host: .*$', "Host: $rpcnHost"
+    $yml = $yml -replace '(?m)^Hosts: .*$', "Hosts: `"DUST 514 stack|$rpcnHost`""
+} else {
+    $password = -join ((48..57) + (65..90) + (97..122) | Get-Random -Count 16 | ForEach-Object { [char]$_ })
+    $yml = "Version: 2`nHost: $rpcnHost`nNPID: $RpcnNpid`nPassword: $password`nToken: `"`"`n" +
+           "Hosts: `"DUST 514 stack|$rpcnHost`"`nExperimental IPv6 support: false`n"
+}
+[IO.File]::WriteAllText($rpcnYml, $yml, (New-Object Text.UTF8Encoding $false))
 
 Copy-Tree "$root\research\extracted_0319" (Join-Path $Out "extracted_0319")
 
 $size = (Get-ChildItem $Out -Recurse -File | Measure-Object Length -Sum).Sum / 1GB
 "data folder ready: $Out ({0:N1} GB)" -f $size
-if (-not (Test-Path "$target\rpcn.yml")) { "missing: $target\rpcn.yml (RPCN account for the host)" }
 
 exit 0

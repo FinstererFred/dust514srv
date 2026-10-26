@@ -1,12 +1,13 @@
 # DUST 514 – Gefechts-Host im Docker-Container
 
-Standalone-Host für einen Linux-Server ohne GPU. Drei Container, alle im Host-Netzwerk:
+Standalone-Host für einen Linux-Server ohne GPU. Vier Container, alle im Host-Netzwerk:
 
 | Dienst | Image | Aufgabe |
 |---|---|---|
 | `host` | `dust514-host` (Ubuntu 26.04) | RPCS3, aus dem Quellcode gebaut mit `rpcs3_patches/*.patch`, läuft `--headless` mit Null-Renderer und startet die Karte als UE3-Listen-Server (UDP 7777); ein Watchdog startet RPCS3 bei Absturz, Hänger oder auf Anfrage neu |
 | `crest` | `dust514-crest` (Python 3.13) | `dust_server/` (CREST-API, Gefechtssuche, Dev-Befehle für den Host) |
 | `catma` | `dust514-catma` (Python 2.7) | `catma_service/` (CCPs Offline-Handler mit der CATMA-Datenbank) |
+| `rpcn` | `dust514-rpcn` (Debian 12) | RPCN 1.12.1, aus dem Quellcode gebaut, nur auf `127.0.0.1:31313`: Hier meldet sich der Host an. Spieler bleiben bei ihrem eigenen RPCN (z. B. dem offiziellen), die Spielverbindung läuft nicht über RPCN |
 
 Warum das ohne GPU geht: `docs/battle_feasibility.md`, Experiment 9, Nachtrag „Null-Renderer gelöst“.
 
@@ -16,7 +17,6 @@ Warum das ohne GPU geht: `docs/battle_feasibility.md`, Experiment 9, Nachtrag �
   liefen sechs SPU-Threads mit je ~80 % plus RSX-, PPU- und Python-Threads)
 - Rund 15 GB Platz: Daten ~3 GB, RPCS3-Build ~5 GB, Caches
 - Der Datenordner (siehe unten), lokal erzeugt mit `tools/export_host_data.ps1`
-- Ein **eigenes RPCN-Konto für den Host**. Ein Konto kann nicht zweimal gleichzeitig angemeldet sein.
 
 ## Datenordner (`DUST_DATA`, außerhalb des Repos)
 
@@ -26,20 +26,25 @@ $DUST_DATA/
   rpcs3/                          → /data im host-Container
     config/rpcs3/                 = $XDG_CONFIG_HOME/rpcs3
       custom_configs/config_NPUB30643.yml   Null-Renderer, Frame limit Auto (unter Linux ohne config/-Unterordner)
-      patch_config.yml, rpcn.yml
+      patch_config.yml
+      rpcn.yml                    Host-Konto (DustHost, zufälliges Passwort) am Stack-RPCN 127.0.0.1:31313
       dev_hdd0/game/NPUB30643/    Spiel mit gepatchter COMMON.SDAT (Dev-Hook, Log-Weiterleitung) und SAKE.INI
       dev_hdd0/home/              Benutzerprofil mit Lizenz (.rap)
       dev_flash/                  PS3-Firmware
       patches/                    EdgeZlib-Patch
     cache/rpcs3/                  RPCS3.log, PPU/SPU-Caches (entsteht beim ersten Start)
     control/                      restart, stop, status.json (Watchdog)
+  rpcn/                           → /data im rpcn-Container: rpcn.cfg, Zertifikat, Kontendatenbank (entsteht beim ersten Start)
 ```
 
 Erzeugen auf dem Windows-PC und hochladen:
 
 ```powershell
-tools\export_host_data.ps1 -Out E:\dust514-data -RpcnConfig <rpcn.yml des Host-Kontos>
+tools\export_host_data.ps1 -Out E:\dust514-data
 ```
+
+Das Skript schreibt beim ersten Mal eine `rpcn.yml` mit zufälligem Passwort. Das Konto legt der Watchdog beim Start
+selbst im Stack-RPCN an.
 
 ## Start
 
@@ -61,9 +66,9 @@ keine Antwort vom Listen-Server. Dafür gibt es `compose.desktop.yaml`. Damit te
 docker compose -f compose.yaml -f compose.desktop.yaml up -d
 ```
 
-`rpcn.yml` des Hosts zeigt dann auf `host.docker.internal:31313`, wenn der RPCN-Server auf dem PC läuft (dort
-`Host=0.0.0.0` in `rpcn.cfg`). Wird der `host`-Container neu erzeugt, müssen `crest` und `catma` mit neu erzeugt
-werden (gemeinsamer Netz-Namespace). Ein Neustart über den Watchdog betrifft nur RPCS3 im Container.
+Wird der `host`-Container neu erzeugt, müssen `crest`, `catma` und `rpcn` mit neu erzeugt werden (gemeinsamer
+Netz-Namespace), also immer `up -d --force-recreate` für den ganzen Stack, nie einen Dienst einzeln. Ein Neustart
+über den Watchdog betrifft nur RPCS3 im Container.
 
 ## Steuerung
 
@@ -71,6 +76,9 @@ werden (gemeinsamer Netz-Namespace). Ein Neustart über den Watchdog betrifft nu
   `touch $DUST_DATA/rpcs3/control/restart`
 - Anhalten, bis die Datei wieder weg ist: `touch $DUST_DATA/rpcs3/control/stop`
 - Zustand: `$DUST_DATA/rpcs3/control/status.json` (`state`, `pid`, `restarts`, `reason`)
+- Vor jedem Start wartet der Watchdog, bis das RPCN aus `rpcn.yml` antwortet, und legt das Host-Konto an, falls es
+  fehlt (`state` dann `waiting`, `reason` nennt den Grund). Ohne RPCN bliebe das Spiel an der PSN-Anmeldung hängen,
+  und das fiele erst nach `STARTUP_GRACE` auf. Abschalten mit `RPCN_CHECK=0`.
 - Der Watchdog startet RPCS3 auch neu, wenn das Spiel im Host den CREST-Server länger als `HEARTBEAT_TIMEOUT`
   Sekunden (Standard 120) nicht mehr abfragt (`GET /dev/host/heartbeat/`). Das passiert zum Beispiel nach einem
   Neustart von `crest`: Das Python des Spiels stirbt dann, während RPCS3 weiterläuft.
@@ -94,7 +102,8 @@ Für Spieler außerhalb des Servers:
   127.0.0.1.
 - Clients brauchen `SAKE.INI` mit `url = http://<server>:8080` und in RPCS3 die IP-Umleitung
   `crest.eveonline.com=<server>&&dust.dyn.ccpgamescdn.com=<server>`.
-- Jeder Spieler braucht ein eigenes RPCN-Konto.
+- Jeder Spieler braucht ein eigenes RPCN-Konto, auf einem beliebigen RPCN-Server (getestet: offizielles
+  `np.rpcs3.net` gegen den Host am Stack-RPCN). Port 31313 bleibt zu.
 
 ## Stand
 

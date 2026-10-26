@@ -4,7 +4,8 @@
 #
 # All services use the host network: the game inside RPCS3 reaches the CREST server at 127.0.0.1
 # (IP swap list in its config), the CREST server reaches the offline service at 127.0.0.1:8090, and
-# the listen server needs UDP 7777 reachable from the players.
+# the listen server needs UDP 7777 reachable from the players. The host signs in to its own RPCN at
+# 127.0.0.1:31313; players keep their own RPCN (e.g. the official one), so RPCN is not published.
 
 name: dust514
 
@@ -20,6 +21,17 @@ services:
       - ../catma_service:/srv/dust/catma_service:ro
       - ${DUST_DATA}/extracted_0319:/data/extracted:ro
       - ${DUST_DATA}/rpcs3/config/rpcs3/dev_hdd0/game/NPUB30643/USRDIR/DUSTGAME/VAULT:/data/vault:ro
+
+  rpcn:
+    build:
+      context: ..
+      dockerfile: docker/rpcn/Dockerfile
+    image: dust514-rpcn
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      # rpcn.cfg, certificate and the account database (created on the first start)
+      - ${DUST_DATA}/rpcn:/data
 
   crest:
     build:
@@ -50,7 +62,7 @@ services:
     image: dust514-host
     network_mode: host
     restart: unless-stopped
-    depends_on: [crest]
+    depends_on: [crest, rpcn]
     stop_grace_period: 30s
     environment:
       HOST_GAME_ARGS: ${HOST_GAME_ARGS:--autologinserver=127.0.0.1:8080 -autologincharindex=0}
