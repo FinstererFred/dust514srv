@@ -60,17 +60,21 @@ class NotificationHub:
     KEEP_ALIVE_SECONDS = 10
 
     def __init__(self):
-        self.streams = {}  # stream id -> {"owner": path, "queue": Queue, "sn": next sequence number}
+        self.streams = {}  # stream id -> {"owner": path, "peer": address, "queue": Queue, "sn": next sequence number}
 
-    def create(self, owner):
+    def create(self, owner, peer=None):
         stream_id = uuid.uuid4().hex
-        self.streams[stream_id] = {"owner": owner, "queue": queue.Queue(), "sn": 0}
+        self.streams[stream_id] = {"owner": owner, "peer": peer, "queue": queue.Queue(), "sn": 0}
         return stream_id
 
-    def send(self, owner, data):
-        """Queue a notification for every stream created by `owner` (e.g. '/characters/123/notifications/')."""
+    def send(self, owner, data, peer=None):
+        """Queue a notification for every stream created by `owner` (e.g. '/characters/123/notifications/').
+
+        With `peer`, only for streams opened from that address: all local players and the listen-server
+        host share CCP's offline character, so the owner alone does not tell their clients apart.
+        """
         for stream in self.streams.values():
-            if stream["owner"] == owner:
+            if stream["owner"] == owner and (peer is None or stream["peer"] == peer):
                 stream["queue"].put(data)
 
     def lines(self, stream_id):
@@ -290,7 +294,7 @@ def update_mercenary(req):
 
 @route("POST", r"^/(users|characters)/\d+/notifications/$")
 def create_notification_stream(req):
-    stream_id = HUB.create(req["path"])
+    stream_id = HUB.create(req["path"], req.get("peer"))
     return RawResponse(b"", "application/json", {"Location": f"{req['base']}/notifications/streams/{stream_id}/"}, status=201)
 
 
@@ -628,18 +632,21 @@ def join_battle(req):
     # (characterConnectionClient._NotificationCallback) and passes "body" to battleClient3.
     owner = f"/characters/{character_id}/notifications/"
     joined = {"contentType": "application/vnd.ccp.eve.OnBattleMemberJoined-v1", "body": member}
-    threading.Timer(config["joined_delay_seconds"], HUB.send, args=(owner, joined)).start()
+    # Only to the joining client: the host has the same character, and a host that gets the connect
+    # joins its own battle as a client, leaves the listen map and drops every player.
+    peer = req.get("peer")
+    threading.Timer(config["joined_delay_seconds"], HUB.send, args=(owner, joined, peer)).start()
     connect_data = {"contentType": "application/vnd.ccp.eve.OnBattleMemberConnect-v1", "body": connect}
     if listen_member:
         with LISTEN_LOCK:
-            PENDING_CONNECTS[credential] = (owner, connect_data)
+            PENDING_CONNECTS[credential] = (owner, connect_data, peer)
     else:
-        threading.Timer(config["connect_delay_seconds"], HUB.send, args=(owner, connect_data)).start()
+        threading.Timer(config["connect_delay_seconds"], HUB.send, args=(owner, connect_data, peer)).start()
     return member
 
 
 LISTEN_MEMBERS = []  # players registered with the listen-server host, one entry per join
-PENDING_CONNECTS = {}  # credential -> (notification owner, OnBattleMemberConnect) until the host has it
+PENDING_CONNECTS = {}  # credential -> (notification owner, OnBattleMemberConnect, peer) until the host has it
 LISTEN_LOCK = threading.Lock()
 LISTEN_CONNECT_DELAY = 2.0  # the host registers right after its poll returns
 
