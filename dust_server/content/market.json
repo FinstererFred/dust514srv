@@ -1,0 +1,12 @@
+{
+  "enabled": true,
+  "excluded_groups": [
+    365995
+  ],
+  "hidden_groups": [],
+  "items": {
+    "356073": {
+      "price": 10
+    }
+  }
+}

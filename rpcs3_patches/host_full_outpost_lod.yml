@@ -1,0 +1,144 @@
+# Entwurf (ungetestet): Listen-Host lädt alle Detailstufen aller Outposts.
+# Nur in die Patch-Datei des HOSTS eintragen (D:\rpcs3\patches\NPUB30643_patch.yml bzw. Docker-Host),
+# nicht bei Client 2 (D:\rpcs3_b). Herleitung: docs/battle_feasibility.md, Abschnitt
+# „Live-Kombinationen und Kollision fern vom Host“.
+#
+# FUN_0085ed78 (Outpost-LOD-Manager) lädt pro Outpost-Socket alle LOD-Einträge mit Index <= Ziel-Index
+# (Socket+0x20). Index 0 ist der _LOD0-Proxy, die vollen Ebenen X / X+AU kommen danach. Der Ziel-Index
+# hängt am Blickpunkt des Hosts. Der Patch ersetzt das Lesen des Ziel-Index durch 0x7fff0000.
+# Die Stufen werden weiter nacheinander geladen (der Manager wartet, bis die vorige Stufe sichtbar ist).
+#
+#   0x0085f12c  80980020  lwz r4,0x20(r24)   ->  3c807fff  lis r4,0x7fff
+#
+# Das allein reicht nicht (Test 2026-10-26): Das Überblend-System FUN_0099aa18 blendet den _LOD0-Proxy nur nahe am
+# eigenen Blickpunkt aus, und ein ausgeblendeter Actor verliert seine Kollision (FUN_001a6158). Ein Client hat an
+# seiner Position also nur die Detailgeometrie, der Host dort weiter den Proxy -> Pawn steht auf dem Server auf dem
+# Proxy, auf dem Client fällt er ("hängt in der Luft"). Zweite Zeile: jeder Cluster gilt als nah.
+#
+#   0x0099aaf0  3b00ffff  li r24,-1          ->  3b000001  li r24,1   (Patch 0.2, in 0.3 ersetzt)
+#
+# Patch 0.3 (ungetestet): Statt „jeder Cluster ist nah“ zwei Code-Höhlen (RPCS3 calloc), die alle Spielfiguren aus
+# WorldInfo.PawnList einbeziehen. Erzeugt mit research/tools_local/cave_asm.py, dort steht die Herleitung.
+#   - 0x0099ae94 (FUN_0099ac80): Abstand Cluster <-> Blickpunkt wird zum kleinsten Abstand über Blickpunkt und alle
+#     Pawns. Ein Cluster gilt also als nah, wenn irgendein Spieler nah ist. Innere Cluster fern von allen bleiben grob.
+#   - 0x00820088 (FUN_0081ffb4): ruft FUN_00815548 zusätzlich für jeden Pawn auf, die Funktion behält pro
+#     Terrain-Teil die feinste Stufe. Die MegaTerrain-Kollision ist dann an allen Spielerpositionen fein.
+#   - 0x007fb7bc (FUN_007fb450, Patch 0.5): verfeinert die MegaTerrain-Kollisionskacheln (FUN_008240e8) in jedem Tick
+#     zusätzlich um jeden Pawn. Test 4: Die Höhle bei 0x820088 verfeinert die Kollision nicht. Test 5: Patch 0.4 hing in
+#     FUN_007f9b54, das nur bei Ereignis 0x2f läuft, und half ebenfalls nicht.
+# Zurück auf 0.2: alle calloc-Blöcke durch die alte Zeile 0x0099aaf0 ersetzen.
+
+Version: 1.2
+
+PPU-ae3f946dfcb103b782f73f1cc5f90587e652f439:
+  "Listen host: load all outpost LODs":
+    Games:
+      "DUST 514":
+        NPUB30643: [ 03.19 ]
+    Author: "Dust 514 RPCS3 research"
+    Patch Version: 0.5
+    Notes: "Host only. Forces the outpost LOD manager to stream every detail level of every outpost. The proxy/detail fade and the MegaTerrain collision detail use the nearest pawn instead of only the local view, so server-side collision matches what clients collide with. Watch memory."
+    Patch:
+      - [ be32, 0x0085f12c, 0x3c807fff ] # lis r4,0x7fff (was lwz r4,0x20(r24))
+      # terrain cave, 30 slots
+      - [ calloc, 0x00820088, 30 ]
+      - [ be32, 0x00000000, 0x3f6001cb ] # lis r27, 0x1cb
+      - [ be32, 0x00000004, 0x837b0fe8 ] # lwz r27, 0xfe8(r27)
+      - [ be32, 0x00000008, 0x2c1b0000 ] # cmpwi r27, 0
+      - [ be32, 0x0000000c, 0x41820068 ] # beq 0x74
+      - [ be32, 0x00000010, 0x837b0050 ] # lwz r27, 0x50(r27)
+      - [ be32, 0x00000014, 0x2c1b0000 ] # cmpwi r27, 0
+      - [ be32, 0x00000018, 0x4182005c ] # beq 0x74
+      - [ be32, 0x0000001c, 0x837b003c ] # lwz r27, 0x3c(r27)
+      - [ be32, 0x00000020, 0x2c1b0000 ] # cmpwi r27, 0
+      - [ be32, 0x00000024, 0x41820050 ] # beq 0x74
+      - [ be32, 0x00000028, 0x837b0000 ] # lwz r27, 0(r27)
+      - [ be32, 0x0000002c, 0x2c1b0000 ] # cmpwi r27, 0
+      - [ be32, 0x00000030, 0x41820044 ] # beq 0x74
+      - [ be32, 0x00000034, 0x839b04f8 ] # lwz r28, 0x4f8(r27)
+      - [ be32, 0x00000038, 0x2c1c0000 ] # cmpwi r28, 0
+      - [ be32, 0x0000003c, 0x41820038 ] # beq 0x74
+      - [ be32, 0x00000040, 0xc0210074 ] # lfs f1, 0x74(r1)
+      - [ be32, 0x00000044, 0xc05c0058 ] # lfs f2, 0x58(r28)
+      - [ be32, 0x00000048, 0xc0610070 ] # lfs f3, 0x70(r1)
+      - [ be32, 0x0000004c, 0xec211028 ] # fsubs f1, f1, f2
+      - [ be32, 0x00000050, 0xc05c0054 ] # lfs f2, 0x54(r28)
+      - [ be32, 0x00000054, 0x63430000 ] # ori r3, r26, 0
+      - [ be32, 0x00000058, 0xec431028 ] # fsubs f2, f3, f2
+      - [ be32, 0x0000005c, 0xec210072 ] # fmuls f1, f1, f1
+      - [ be32, 0x00000060, 0xec2208ba ] # fmadds f1, f2, f2, f1
+      - [ be32, 0x00000064, 0xec20082c ] # fsqrts f1, f1
+      - [ jumpl, 0x00000068, 0x00815548 ] # bl 0x815548
+      - [ be32, 0x0000006c, 0x839c01f8 ] # lwz r28, 0x1f8(r28)
+      - [ be32, 0x00000070, 0x4bffffc8 ] # b 0x38
+      - [ be32, 0x00000074, 0x3f6001cb ] # lis r27, 0x1cb
+      # fade cave, 34 slots
+      - [ calloc, 0x0099ae94, 34 ]
+      - [ jumpl, 0x00000000, 0x01600890 ] # bl 0x1600890
+      - [ be32, 0x00000004, 0xf821ff71 ] # stdu r1, -0x90(r1)
+      - [ be32, 0x00000008, 0xd0210080 ] # stfs f1, 0x80(r1)
+      - [ be32, 0x0000000c, 0xfbc10070 ] # std r30, 0x70(r1)
+      - [ be32, 0x00000010, 0xfbe10078 ] # std r31, 0x78(r1)
+      - [ be32, 0x00000014, 0x3fe001cb ] # lis r31, 0x1cb
+      - [ be32, 0x00000018, 0x83ff0fe8 ] # lwz r31, 0xfe8(r31)
+      - [ be32, 0x0000001c, 0x2c1f0000 ] # cmpwi r31, 0
+      - [ be32, 0x00000020, 0x41820058 ] # beq 0x78
+      - [ be32, 0x00000024, 0x83ff0050 ] # lwz r31, 0x50(r31)
+      - [ be32, 0x00000028, 0x2c1f0000 ] # cmpwi r31, 0
+      - [ be32, 0x0000002c, 0x4182004c ] # beq 0x78
+      - [ be32, 0x00000030, 0x83ff003c ] # lwz r31, 0x3c(r31)
+      - [ be32, 0x00000034, 0x2c1f0000 ] # cmpwi r31, 0
+      - [ be32, 0x00000038, 0x41820040 ] # beq 0x78
+      - [ be32, 0x0000003c, 0x83ff0000 ] # lwz r31, 0(r31)
+      - [ be32, 0x00000040, 0x2c1f0000 ] # cmpwi r31, 0
+      - [ be32, 0x00000044, 0x41820034 ] # beq 0x78
+      - [ be32, 0x00000048, 0x83df04f8 ] # lwz r30, 0x4f8(r31)
+      - [ be32, 0x0000004c, 0x2c1e0000 ] # cmpwi r30, 0
+      - [ be32, 0x00000050, 0x41820028 ] # beq 0x78
+      - [ be32, 0x00000054, 0x3861010c ] # addi r3, r1, 0x10c
+      - [ be32, 0x00000058, 0x389e0054 ] # addi r4, r30, 0x54
+      - [ jumpl, 0x0000005c, 0x01600890 ] # bl 0x1600890
+      - [ be32, 0x00000060, 0xc0410080 ] # lfs f2, 0x80(r1)
+      - [ be32, 0x00000064, 0xfc011000 ] # fcmpu cr0, f1, f2
+      - [ be32, 0x00000068, 0x40800008 ] # bge 0x70
+      - [ be32, 0x0000006c, 0xd0210080 ] # stfs f1, 0x80(r1)
+      - [ be32, 0x00000070, 0x83de01f8 ] # lwz r30, 0x1f8(r30)
+      - [ be32, 0x00000074, 0x4bffffd8 ] # b 0x4c
+      - [ be32, 0x00000078, 0xc0210080 ] # lfs f1, 0x80(r1)
+      - [ be32, 0x0000007c, 0xebc10070 ] # ld r30, 0x70(r1)
+      - [ be32, 0x00000080, 0xebe10078 ] # ld r31, 0x78(r1)
+      - [ be32, 0x00000084, 0x38210090 ] # addi r1, r1, 0x90
+      # collision cave, 32 slots
+      - [ calloc, 0x007fb7bc, 32 ]
+      - [ be32, 0x00000000, 0xf821ff71 ] # stdu r1, -0x90(r1)
+      - [ be32, 0x00000004, 0xfbc10070 ] # std r30, 0x70(r1)
+      - [ be32, 0x00000008, 0x3fc001cb ] # lis r30, 0x1cb
+      - [ be32, 0x0000000c, 0x83de0fe8 ] # lwz r30, 0xfe8(r30)
+      - [ be32, 0x00000010, 0x2c1e0000 ] # cmpwi r30, 0
+      - [ be32, 0x00000014, 0x41820060 ] # beq 0x74
+      - [ be32, 0x00000018, 0x83de0050 ] # lwz r30, 0x50(r30)
+      - [ be32, 0x0000001c, 0x2c1e0000 ] # cmpwi r30, 0
+      - [ be32, 0x00000020, 0x41820054 ] # beq 0x74
+      - [ be32, 0x00000024, 0x83de003c ] # lwz r30, 0x3c(r30)
+      - [ be32, 0x00000028, 0x2c1e0000 ] # cmpwi r30, 0
+      - [ be32, 0x0000002c, 0x41820048 ] # beq 0x74
+      - [ be32, 0x00000030, 0x83de0000 ] # lwz r30, 0(r30)
+      - [ be32, 0x00000034, 0x2c1e0000 ] # cmpwi r30, 0
+      - [ be32, 0x00000038, 0x4182003c ] # beq 0x74
+      - [ be32, 0x0000003c, 0x83de04f8 ] # lwz r30, 0x4f8(r30)
+      - [ be32, 0x00000040, 0x2c1e0000 ] # cmpwi r30, 0
+      - [ be32, 0x00000044, 0x41820030 ] # beq 0x74
+      - [ be32, 0x00000048, 0x39000003 ] # li r8, 3
+      - [ be32, 0x0000004c, 0x91010080 ] # stw r8, 0x80(r1)
+      - [ be32, 0x00000050, 0x80bd01f4 ] # lwz r5, 0x1f4(r29)
+      - [ be32, 0x00000054, 0x7ca507b4 ] # extsw r5, r5
+      - [ be32, 0x00000058, 0x38c10080 ] # addi r6, r1, 0x80
+      - [ be32, 0x0000005c, 0x63a30000 ] # ori r3, r29, 0
+      - [ be32, 0x00000060, 0x38e00000 ] # li r7, 0
+      - [ be32, 0x00000064, 0x389e0054 ] # addi r4, r30, 0x54
+      - [ jumpl, 0x00000068, 0x008240e8 ] # bl 0x8240e8
+      - [ be32, 0x0000006c, 0x83de01f8 ] # lwz r30, 0x1f8(r30)
+      - [ be32, 0x00000070, 0x4bffffd0 ] # b 0x40
+      - [ be32, 0x00000074, 0xebc10070 ] # ld r30, 0x70(r1)
+      - [ be32, 0x00000078, 0x38210090 ] # addi r1, r1, 0x90
+      - [ be32, 0x0000007c, 0x63a30000 ] # ori r3, r29, 0

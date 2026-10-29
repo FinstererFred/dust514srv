@@ -8,6 +8,8 @@
 #   .\start_dust.ps1 -Rpcs3 D:\rpcs3_b\rpcs3.exe -GameArgs "-autologinserver=127.0.0.1:8081 -autologincharindex=1 -autologinbattle=LocalTest"
 #                                                     second instance (multiplayer test): own copy, port 8081, local
 #                                                     RPCN; joins the host's battle from the battle finder
+#   .\start_dust.ps1 ... -OffsetX 1360                 shift the window right (second instance next to the host)
+# The --no-gui game window has no frame; the script gives it a title bar and border so it can be moved by hand.
 param(
     [switch]$MoveOnly,
     [switch]$Fullscreen,
@@ -16,6 +18,7 @@ param(
     [int]$Width = 1280,
     [int]$Height = 720,
     [int]$Margin = 80,
+    [int]$OffsetX = 0,
     [string]$Rpcs3 = "D:\rpcs3\rpcs3.exe",
     [string]$Eboot = ""
 )
@@ -29,6 +32,8 @@ public static class Win {
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
     [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr hWnd, IntPtr after, int x, int y, int cx, int cy, uint flags);
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr hWnd, int index);
+    [DllImport("user32.dll")] public static extern int SetWindowLong(IntPtr hWnd, int index, int value);
 }
 "@
 # Physical pixel coordinates; otherwise monitors with different scaling get mixed up.
@@ -61,13 +66,17 @@ if (-not $proc) { throw "No RPCS3 window with DUST 514 found." }
 
 $screen = [System.Windows.Forms.Screen]::AllScreens | Where-Object { $_.DeviceName -eq $Monitor } | Select-Object -First 1
 if (-not $screen) { throw "Monitor $Monitor not found." }
-$x = $screen.WorkingArea.X + $Margin
+$x = $screen.WorkingArea.X + $Margin + $OffsetX
 $y = $screen.WorkingArea.Y + $Margin
 
 if ($Fullscreen) {
     "DUST 514 fullscreen on $Monitor"
 } else {
     [Win]::ShowWindow($proc.MainWindowHandle, 9) | Out-Null   # SW_RESTORE: leave maximized/fullscreen state
-    [Win]::SetWindowPos($proc.MainWindowHandle, [IntPtr]::Zero, $x, $y, $Width, $Height, 0x0014) | Out-Null  # SWP_NOZORDER | SWP_NOACTIVATE
+    # GWL_STYLE (-16): add WS_OVERLAPPEDWINDOW (caption, system menu, sizing border, min/max boxes)
+    $style = [Win]::GetWindowLong($proc.MainWindowHandle, -16)
+    [Win]::SetWindowLong($proc.MainWindowHandle, -16, $style -bor 0x00CF0000) | Out-Null
+    # SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED
+    [Win]::SetWindowPos($proc.MainWindowHandle, [IntPtr]::Zero, $x, $y, $Width, $Height, 0x0034) | Out-Null
     "DUST 514 window at $x,$y ($Width x $Height) on $Monitor"
 }

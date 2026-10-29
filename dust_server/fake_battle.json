@@ -12,7 +12,7 @@
   },
   "battle_id": 514001,
   "name": "LocalTest",
-  "mode_id": 365739,
+  "mode_id": 353889,
   "planet_id": 0,
   "attacker_corp_id": 1000214,
   "defender_corp_id": 1000216,
@@ -25,7 +25,7 @@
   },
   "listen_team": "defender",
   "first_member_id": 2100001612,
-  "mode_name": "Domination",
+  "mode_name": "Ambush",
   "theatre_name": "Lokale Gefechte",
   "theatre_description": "Testgefecht des lokalen Servers"
 }
