@@ -744,34 +744,71 @@ async function pageWallet(el) {
 
 // --- characters (store.py, DUST_CHAR_STORE=1) -----------------------------------------------------
 
+const openSkillEditors = new Set();  // character IDs whose skill list is expanded, kept across reloads
+
 async function pageCharacters(el) {
   const data = await api("/api/characters");
-  const intro = head("Characters", "Accounts (RPCN online ID) and their characters. Total SP include passive gain; free SP = total minus the cost of all known skills.");
+  const intro = head("Characters", "Accounts (RPCN online ID) and their characters. Total SP include passive gain; free SP = total minus the cost of all known skills. Changes reach a logged-in client right away.");
   if (!data.enabled) {
     el.replaceChildren(intro, h("div", { class: "card" }, h("p", { class: "muted", text: "Own characters are off: start the server with DUST_CHAR_STORE=1. Until then every player uses CCP's offline characters." })));
     return;
   }
+  let skillData = null;
+  try { skillData = await api("/api/skills"); } catch (e) { /* CATMA service without GET /skills: no skill editor */ }
+  const skillById = new Map((skillData ? skillData.skills : []).map((s) => [s.id, s]));
+  const skillName = (id) => (skillById.get(id) || { name: `Skill ${id}` }).name;
+  const levels = (max) => Array.from({ length: max + 1 }, (_, l) => [String(l), l === 0 ? "0 (book)" : String(l)]);
   const save = (button, id, body, message) => run(button, async () => { await api(`/api/characters/${id}`, body); toast(message); await pageCharacters(el); });
-  const row = (c) => {
-    const edit = { sp: c.sp, isk: c.isk };
-    return h("tr", {},
+
+  const skillEditor = (c) => {
+    const known = [...c.skills].sort((a, b) => skillName(a.id).localeCompare(skillName(b.id)));
+    const listId = `skills-${c.id}`;
+    const add = { name: "", level: "1" };
+    return h("tr", {}, h("td", { colspan: 7 },
+      h("table", {},
+        h("tr", {}, ["Skill", "Level", "SP spent", ""].map((t) => h("th", { text: t }))),
+        known.map((k) => h("tr", {},
+          h("td", { text: `${skillName(k.id)} (${k.id})` }),
+          h("td", {}, select(levels(skillData.maxLevel), String(k.level), (v) => save(null, c.id, { skill: { typeID: k.id, level: Number(v) } }, `${skillName(k.id)}: level ${v}`))),
+          h("td", { text: fmt(skillById.has(k.id) ? skillById.get(k.id).cost[k.level] : null) }),
+          h("td", {}, h("button", { class: "danger", text: "×", title: "Remove the skill", onclick: (e) => save(e.target, c.id, { skill: { typeID: k.id, level: null } }, `${skillName(k.id)} removed`) }))))),
+      h("div", { class: "toolbar" },
+        h("input", { type: "text", placeholder: "Add skill by name …", list: listId, oninput: (e) => { add.name = e.target.value; } }),
+        h("datalist", { id: listId }, skillData.skills.filter((s) => !c.skills.some((k) => k.id === s.id)).map((s) => h("option", { value: s.name }))),
+        select(levels(skillData.maxLevel), add.level, (v) => { add.level = v; }),
+        h("button", { text: "Set", onclick: (e) => {
+          const skill = skillData.skills.find((s) => s.name.toLowerCase() === add.name.trim().toLowerCase());
+          if (!skill) { toast("Unknown skill name", true); return; }
+          save(e.target, c.id, { skill: { typeID: skill.id, level: Number(add.level) } }, `${skill.name}: level ${add.level}`);
+        } })),
+      h("p", { class: "muted", text: "No prerequisite or SP check here: any state can be set. Level 0 = skill book read, nothing trained." })));
+  };
+
+  const rows = (c) => {
+    const edit = {};  // only changed fields: the shown total SP may already be behind the passive gain
+    const open = openSkillEditors.has(c.id);
+    const main = h("tr", {},
       h("td", { text: `${c.name} (${c.id})` }),
       h("td", {}, numberInput(c.sp, (v) => { edit.sp = v || 0; })),
       h("td", { text: fmt(c.free_sp) }),
       h("td", { text: c.passive ? `${fmt(c.sp_per_day)} / day` : "off" }),
       h("td", {}, numberInput(c.isk, (v) => { edit.isk = v || 0; })),
-      h("td", { text: fmt(c.skills) }),
+      h("td", {}, skillData
+        ? h("button", { text: `${c.skills.length} ${open ? "▲" : "▼"}`, title: "Show and edit the skills", onclick: () => { open ? openSkillEditors.delete(c.id) : openSkillEditors.add(c.id); pageCharacters(el); } })
+        : h("span", { text: fmt(c.skills.length) })),
       h("td", {},
         h("button", { class: "primary", text: "Save", onclick: (e) => save(e.target, c.id, edit, `${c.name} saved`) }), " ",
         h("button", { class: "danger", text: "Reset skills", title: "Back to the specialty's starting skills", onclick: (e) => {
           if (confirm(`Reset all skills of ${c.name} to the starting skills?`)) save(e.target, c.id, { reset_skills: true }, `Skills of ${c.name} reset`);
         } })));
+    return open && skillData ? [main, skillEditor(c)] : [main];
   };
   el.replaceChildren(intro, ...(data.users.length ? data.users.map((u) => h("div", { class: "card" },
     h("h3", { text: `${u.online_id} (user ${u.id})` }),
     u.characters.length ? h("table", {},
       h("tr", {}, ["Character", "Total SP", "Free SP", "Passive gain", "ISK", "Skills", ""].map((t) => h("th", { text: t }))),
-      u.characters.map(row)) : h("p", { class: "muted", text: "No characters." }))) : [h("div", { class: "card" }, h("p", { class: "muted", text: "No accounts yet – they are created at the first login." }))]));
+      u.characters.flatMap(rows)) : h("p", { class: "muted", text: "No characters." }))) : [h("div", { class: "card" }, h("p", { class: "muted", text: "No accounts yet – they are created at the first login." }))]));
+  if (!skillData) el.append(h("p", { class: "muted", text: "Skill editor unavailable: the CATMA service does not serve /skills yet (restart it)." }));
 }
 
 // --- start ----------------------------------------------------------------------------------------

@@ -563,7 +563,7 @@ def api_characters():
             chars.append({"id": char["id"], "name": char["name"], "specialty": char["specialty_id"],
                           "sp": total, "free_sp": rules.free_sp(total, known) if rules else None,
                           "sp_per_day": char["sp_per_day"], "passive": bool(char["passive_sp"]), "isk": char["isk"],
-                          "skills": len(known)})
+                          "skills": [{"id": t, "level": level} for t, level in known.items()]})
         users.append({"id": user["id"], "online_id": user["online_id"], "characters": chars})
     return {"enabled": True, "users": users}
 
@@ -575,6 +575,7 @@ def api_character_save(body, char_id):
     char = db.character(char_id)
     if not char:
         raise AdminError(404, "unknown character")
+    before = db.skills_of(char_id)
     if "sp" in body:
         db.set_total_sp(char_id, max(0, _int(body["sp"])))
     if "isk" in body:
@@ -582,7 +583,32 @@ def api_character_save(body, char_id):
     if body.get("reset_skills"):
         specialty = next(s for s in content.specialties() if s["id"] == char["specialty_id"])
         db.replace_skills(char_id, {s["skillTypeID"]: s["skillLevel"] for s in specialty["startingSkills"]})
+    if isinstance(body.get("skill"), dict):
+        # One skill at a level 0-5 (0 = book read, nothing trained) or removed (level null). No prerequisite or SP
+        # check: the admin may set any state, e.g. to test a fitting.
+        type_id, level = _int(body["skill"].get("typeID")), body["skill"].get("level")
+        rules = content.skill_rules()
+        if type_id not in rules.skills:
+            raise AdminError(400, "not a skill")
+        skills = dict(before)
+        if level is None:
+            skills.pop(type_id, None)
+        else:
+            skills[type_id] = min(_int(level), rules.max_level)
+        db.replace_skills(char_id, skills)
+    # Tell a running client (the game otherwise only sees this at the next login)
+    if "sp" in body:
+        crest_app.notify_skill_points(char_id)
+    crest_app.notify_skill_changes(char_id, before, db.skills_of(char_id))
     return {"ok": True}
+
+
+def api_skills():
+    rules = content.skill_rules()
+    return {"maxLevel": rules.max_level, "skills": [
+        {"id": s["id"], "name": s["name"], "required": s["required"],
+         "cost": [rules.cumulative_cost(s["id"], level) for level in range(rules.max_level + 1)]}
+        for s in sorted(rules.skills.values(), key=lambda s: s["name"])]}
 
 
 API = [
@@ -599,6 +625,7 @@ API = [
     ("GET", r"/api/market/effective", api_market_effective),
     ("GET", r"/api/characters", api_characters),
     ("POST", r"/api/characters/(\d+)", api_character_save),
+    ("GET", r"/api/skills", api_skills),
     ("GET", r"/api/content/(\w+)", api_content_get),
     ("POST", r"/api/content/(\w+)", api_content_save),
 ]

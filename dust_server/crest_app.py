@@ -94,6 +94,11 @@ class NotificationHub:
             if stream["owner"] == owner and (peer is None or stream["peer"] == peer):
                 stream["queue"].put(data)
 
+    def base_of(self, owner):
+        """The server address (req["base"]) the newest stream of `owner` was opened with, or None."""
+        bases = [s["peer"][1] for s in self.streams.values() if s["owner"] == owner and s["peer"]]
+        return bases[-1] if bases else None
+
     def lines(self, stream_id):
         stream = self.streams[stream_id]
         yield b'"CCP_HELLO"\n'
@@ -341,6 +346,8 @@ def passive_skill_gain(req):
         return OFFLINE
     status = (req["body"] if isinstance(req["body"], dict) else {}).get("status", 1)
     store.get().set_passive(char["id"], 1 if status else 0)
+    for other in store.get().characters_of(char["user_id"]):  # the account's other characters may have switched off
+        notify_skill_points(other["id"])
     return {}
 
 
@@ -483,6 +490,36 @@ def boosters(req):
 
 def skill_href(req, char_id, type_id):
     return f"{req['base']}/characters/{char_id}/mercenary/skills/{type_id}/"
+
+
+# Changes the client did not make itself (web admin, passive gain switched) reach a running client through its
+# character's notification stream; skillClient listens for both (OnCharacterSkill...FromBackend). Without a stream,
+# e.g. not logged in, they are dropped: the next login loads everything anyway.
+
+def notify_character(char_id, name, body):
+    HUB.send(f"/characters/{char_id}/notifications/", {"contentType": f"application/vnd.ccp.eve.{name}-v1", "body": body})
+
+
+def notify_skill_points(char_id):
+    char = store.get().character(char_id)
+    if char:
+        # skillClient.OnCharacterSkillPointChangeFromBackend; the weekly battle SP cap (stage 5) is not used yet.
+        notify_character(char_id, "OnCharacterSkillPointChange", {
+            "totalSkillPoints": store.total_sp(char), "skillPointsPerDay": sp_per_day(char),
+            "skillPointsThisCycle": 0, "cycleCap": 0})
+
+
+def notify_skill_changes(char_id, before, after):
+    """skillClient.OnCharacterSkillChangeFromBackend for every skill that differs ({typeID: level}; level None =
+    removed). The client keeps a skill's href for upgrades, so it needs the address its stream was opened with."""
+    base = HUB.base_of(f"/characters/{char_id}/notifications/")
+    if not base:
+        return
+    for type_id in sorted(set(before) | set(after)):
+        if before.get(type_id) != after.get(type_id):
+            notify_character(char_id, "OnCharacterSkillChange", {
+                "typeID": type_id, "level": after.get(type_id),
+                "href": f"{base}/characters/{char_id}/mercenary/skills/{type_id}/"})
 
 
 @route("GET", r"^/characters/(\d+)/mercenary/skills/$")

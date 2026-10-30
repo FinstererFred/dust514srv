@@ -176,6 +176,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   - Startcharakter: 136 830 SP stecken in den 8 Start-Skills, 363 170 sind frei.
   - Admin-Seite „Characters“: Konten und Charaktere anzeigen, Gesamt-SP und ISK setzen, Skills auf den Startstand
     zurücksetzen. Ohne Schalter wird die Datenbank nicht geöffnet.
+  - **Live-Updates (2026-10-30):** Admin-Änderungen (Gesamt-SP, einzelne Skills, Reset) und das Umschalten des passiven
+    Zuwachses gehen sofort an einen eingeloggten Client, über `OnCharacterSkillPointChange-v1` bzw. `OnCharacterSkillChange-v1`
+    im Stream des Charakters. Der Client hängt selbst `FromBackend` an den Namen an. `cycleCap`/`skillPointsThisCycle` senden
+    wir als 0, der Client speichert sie nur. Im Prozess geprüft, in RPCS3 noch offen: Aktualisiert der Skill-Bildschirm sich
+    sichtbar?
+  - Admin-Seite „Characters“: Pro Charakter lässt sich die Skill-Liste aufklappen, mit Stufe 0–5 je Skill, Entfernen und
+    Hinzufügen per Name. Es gibt keine Prüfung von Voraussetzungen und SP. „Save“ schickt nur geänderte Felder (sonst würden
+    die angezeigten, schon veralteten Gesamt-SP den passiven Zuwachs überschreiben). Im Browser auf einer Testinstanz geprüft.
   - **Vor einem Server-Neustart für Messungen:** `python tools/legacy_parity.py` (2 s, braucht den CATMA-Dienst) zeigt, ob
     der Server ohne Schalter noch genau wie vor 1a antwortet. Er ist auch Teil der Unit-Tests.
   - Geprüft im Prozess: ohne Schalter 26 Anfragen identisch (auch Skill-POST/PUT), mit Schalter Buch, Upgrade und die vier
