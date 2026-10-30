@@ -16,8 +16,7 @@ Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel
    für den Host. Ziel: ein Client auf 1 Kern bei ≥ 20 Hz und Spielzeit 1,0. Dann b–d umstellen.
 2. **Eingabe-Wiedergabe.** Tastatur geht nur ans Fenster mit Fokus. Kandidat: virtuelle Gamepads (ViGEmBus-Treiber, Installation
    vorher mit dem Nutzer klären) pro Instanz plus RPCS3-Hintergrundeingabe, gesteuert per Skript (laufen, drehen, schießen).
-3. **Speicher in der emulierten PS3.** Freien Hauptspeicher (256 MB) bei 5 Spielern auslesen (z. B. `sys_memory_get_user_memory_size`
-   bzw. RPCS3-Speicherstatistik) und auf 32 hochrechnen. Harte Grenze, die keine Tick-Messung zeigt.
+3. ~~**Speicher in der emulierten PS3.**~~ Erledigt: 213 MB von 256 MB Heap bei 32 Spielern (siehe Funde).
 4. Danach: Clients auf einem zweiten PC, Messreihe 8 → 16 → 32 mit `tools/host_tick.py`.
 
 Zustand am Ende der Session: Host `D:\rpcs3` mit Null-Renderer-Config (Vulkan-Original in
@@ -29,6 +28,26 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Heap im emulierten Speicher bei 16 und 32 Spielern (2026-10-30, `tools/vm_footprint.py`):** UE3 legt seinen Heap in einen
+  `sys_vm`-Bereich (`sys_vm_memory_map vsize=0x10000000 psize=0x9200000` ab 0x40000000, also 256 MB virtuell, 146 MB physisch).
+  RPCS3 hinterlegt die ganzen 256 MB, deshalb zeigen Prozess-RAM und Dumps nichts. Der Allokator meldet aber jede 64K-Seite
+  mit `sys_vm_touch`/`sys_vm_invalidate` (im RPCS3.log); die Bilanz ist der belegte Heap. Messung im selben Host-Lauf wie
+  die Tick-Reihe oben:
+
+  | Zustand | Heap | frei bis 256 MB |
+  |---|---|---|
+  | Host allein im Gefecht | 140 MB | 116 MB |
+  | 16 feuernde Fake-Clients | 171 MB | 85 MB |
+  | 32 feuernde Fake-Clients | 213 MB (Spitze) | 43 MB |
+  | alle wieder weg | 193 MB | 63 MB |
+
+  Also ~2,0–2,3 MB pro Spieler; rechnerisch ist bei ~50 Spielern Schluss. Nach dem Verlassen bleiben ~50 MB belegt, bei
+  Kommen und Gehen in einem langen Match wächst der Heap also weiter (Host-Neustart pro Match ist ohnehin geplant).
+  `psize` (146 MB) überschreitet der Host schon allein; RPCS3 erzwingt das nicht (`sys_vm_get_statistics`, das der
+  Game-Thread jeden Frame abfragt, meldet nichts belegt), auf echter Hardware würde ausgelagert. Der Kernel-Rest außerhalb
+  des Heaps (`sys_memory_get_user_memory_size`) liegt bei 4–11 MB frei von 213 MB und wächst nicht mit Spielern
+  (nur 14 `sys_memory_allocate`, alle beim Start). Für 32 Spieler ist der Speicher damit keine harte Grenze, der
+  Game-Thread schon.
 - **16 und 32 feuernde Fake-Clients (2026-10-30, frischer Host, alle mit Waffe):** Host `D:\rpcs3` Null-Renderer, `-novsync`,
   Clients `--play --fitting assault --fire-interval 5 --fire-burst 2`, 30 s `host_tick.py`:
 
