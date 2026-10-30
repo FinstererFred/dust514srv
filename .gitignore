@@ -16,3 +16,6 @@ __pycache__/
 
 # Local Docker settings (docker/.env.example is the template)
 docker/.env
+
+# Backups of local configs (may contain tokens)
+*.before_*
