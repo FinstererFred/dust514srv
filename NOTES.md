@@ -401,6 +401,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     Ohne Familienname schickt der Client `"name "` mit Leerzeichen am Ende, das wird bereinigt. Löschen bestätigt: Terminate →
     `POST {prepareDelete: true}`, Countdown 60 s, dann `DELETE` → 200, der Platz ist wieder leer (`deleted = 1`), keine Client-Fehler.
     Abbrechen bestätigt (`prepareDelete: false` setzt den Countdown zurück, erneutes Terminate startet ihn neu).
+  - **Start-Corps je Rasse (2026-10-30):** CATMA-Typ `starting_corporations_global` (356418) listet je 12 NPC-Corps pro Rasse
+    (`amarrCorporations.0–11` usw.). Amarr 1000205–1000207 und 1000223–1000231, Caldari 1000208, 1000213, 1000214 und
+    1000232–1000240, Gallente 1000215–1000217, 1000222 und 1000243–1000250, Minmatar 1000218–1000220 und 1000251–1000259.
+    Die Offline-Corps stehen jeweils in der Liste ihrer Rasse (1000205 Index 0, 1000214 Index 9, 1000216 Index 3). Der Client-Code
+    nutzt die Liste nicht (die Zuteilung machte CCPs Backend). Namen stehen im Client nur für die drei Offline-Corps. Weder
+    die String-Caches noch ADAPTERDATA/MODULEDATA enthalten Corp-Namen. Die öffentliche ESI liefert alle 48
+    (`POST https://esi.evetech.net/latest/universe/names/`), jetzt in `characters.STARTING_CORPORATIONS`. Die CATMA-Reihenfolge
+    ist alphabetisch nach Namen. Minmatar-Charaktere kommen zu 1000251 Brutor Vanguard (im Prozess geprüft).
     Noch offen: erster Login eines neuen Kontos ohne Charakter (drei leere Plätze).
 
 ## Hypothesen

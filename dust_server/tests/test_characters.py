@@ -36,6 +36,10 @@ class CreationTest(unittest.TestCase):
         races = {race for _, race, _ in characters.BLOODLINES.values()}
         self.assertEqual(races, set(characters.PORTRAIT_BY_RACE))
         self.assertEqual(races, set(characters.NPC_CORPORATIONS))
+        self.assertEqual(races, set(characters.STARTING_CORPORATIONS))
+        self.assertEqual(len(characters.NPC_CORPORATION_NAMES), 48)  # 12 per race, no ID twice
+        for race, corp_id in characters.NPC_CORPORATIONS.items():  # each race's default is one of its own
+            self.assertIn(corp_id, dict(characters.STARTING_CORPORATIONS[race]))
         self.assertEqual(characters.race_of(5), characters.AMARR)
         self.assertEqual(characters.race_of(11), characters.CALDARI)  # Achura
 

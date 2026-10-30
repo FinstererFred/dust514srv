@@ -235,7 +235,7 @@ Ziel: Leere Plätze in der Auswahl funktionieren, bis zu drei Charaktere pro Kon
 **Umsetzung (2026-10-30):** Regeln in `dust_server/characters.py`, Handler in `crest_app.py`. Abweichungen: 10 statt 12
 Blutlinien (Ni-Kunni und Jin-Mei haben im Client kein Icon). Fehler (Name vergeben/ungültig, kein freier Platz, Löschen zu
 früh) gehen als 403 mit `title`/`message` zurück, das zeigt der Client als Popup. Wartezeit per `DUST_DELETE_WAIT` (Sekunden,
-Standard 60). Kein automatischer Startcharakter mehr. NPC-Corp je Rasse, Minmatar vorerst Amarr Templars (offene Frage 3).
+Standard 60). Kein automatischer Startcharakter mehr. NPC-Corp je Rasse (offene Frage 3).
 `npeState` neuer Charaktere 1 wie CCPs Offline-Charakter, sonst würde vermutlich das Tutorial starten.
 
 **Prüfen:** Leeren Platz wählen → Geschlecht, Rasse, Blutlinie, Spezialisierung → Name → Charakter erscheint mit
@@ -293,8 +293,9 @@ Werte (Schild/Panzerung) entsprechen den Skills; `client.log` des Hosts zeigt �
 2. **Bestehende Testaufbauten:** Beide Test-RPCN-Konten starten in Stufe 1 mit einem frischen Charakter
    (die alten Offline-Charaktere verschwinden). Alternative: einmaliger Import von „Offline Character 1–3“ für das
    erste Konto.
-3. **Minmatar-NPC-Corp:** CCPs Daten nennen nur Amarr (1000205), Caldari (1000214), Gallente (1000216);
-   die Minmatar-Corp in CATMA/Corporation-Daten suchen.
+3. **Minmatar-NPC-Corp (gelöst 2026-10-30):** CATMA `starting_corporations_global` listet 12 Start-Corps je Rasse, die Namen
+   kommen aus der öffentlichen ESI (`dust_server/characters.py`). Neue Charaktere: Amarr 1000205, Caldari 1000214, Gallente 1000216
+   (die Corps der Offline-Charaktere), Minmatar 1000251 Brutor Vanguard (erster Listeneintrag). Wie CCPs Backend wählte, ist offen.
 4. **Startstation:** Heute Ana (Amarr) für alle; pro Rasse eigene Station wäre korrekter, braucht aber
    `/locations/`- und `/stations/`-Daten pro Rasse.
 5. **Ticket-Signatur:** Für einen öffentlichen Server sollte das RPCN-Ticket gegen den Schlüssel des RPCN-Servers

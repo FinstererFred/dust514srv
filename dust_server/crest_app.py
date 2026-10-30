@@ -406,7 +406,7 @@ def create_mercenary(req):
     specialty = next(s for s in content.specialties() if s["race"] == race)
     char = store.get().create_character(
         user["id"], name, 1 if body.get("gender") else 0, bloodline_id, race, specialty,
-        characters.PORTRAIT_BY_RACE[race], characters.NPC_CORPORATIONS[race][0], npe_state=NEW_CHARACTER_NPE_STATE)
+        characters.PORTRAIT_BY_RACE[race], characters.NPC_CORPORATIONS[race], npe_state=NEW_CHARACTER_NPE_STATE)
     print(f"characters: {user['online_id']} created {char['id']} {name!r} bloodline {bloodline_id}", flush=True)
     return {}
 
