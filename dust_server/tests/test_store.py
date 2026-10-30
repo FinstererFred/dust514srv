@@ -106,7 +106,7 @@ class StoreTest(unittest.TestCase):
         self.store = store.Store(self.path)
         self.assertEqual(len(self.store.users()), 1)
         self.store.close()
-        # a new schema version: the next open migrates and keeps a copy of version 1
+        # a new schema version: the next open migrates and keeps a copy of the current version
         migrations = list(store.MIGRATIONS)
         store.MIGRATIONS.append("CREATE TABLE extra (x INTEGER)")
         try:
@@ -114,7 +114,54 @@ class StoreTest(unittest.TestCase):
         finally:
             store.MIGRATIONS[:] = migrations
         self.assertEqual(len(self.store.users()), 1)
-        self.assertTrue(self.path.with_name("dust.sqlite.bak-1").exists())
+        self.assertTrue(self.path.with_name(f"dust.sqlite.bak-{len(migrations)}").exists())
+
+    def test_inventory(self):
+        char = self.char(self.store.user_for_online_id("x")["id"])
+        first = self.store.add_items(char["id"], {353120: 50, 367499: 1})
+        self.assertEqual([(r["type_id"], r["quantity"]) for r in first], [(353120, 50), (367499, 1)])
+        self.assertEqual(first[0]["id"], store.FIRST_ITEM_ID)
+        again = self.store.add_items(char["id"], {353120: 5})
+        self.assertEqual((again[0]["id"], again[0]["quantity"]), (store.FIRST_ITEM_ID, 55))
+        with self.assertRaises(store.NotEnough):
+            self.store.add_items(char["id"], {353120: -1, 367499: -2})
+        self.assertEqual(self.store.quantity(char["id"], 353120), 55)  # nothing taken
+        gone = self.store.add_items(char["id"], {367499: -1})
+        self.assertEqual(gone[0]["quantity"], 0)
+        self.assertEqual([r["type_id"] for r in self.store.inventory_of(char["id"])], [353120])
+
+    def test_starting_items_once(self):
+        char = self.char(self.store.user_for_online_id("x")["id"])
+        fittings = [(364740, "Frontline", True), (353486, "LAV", False)]
+        self.assertTrue(self.store.give_starting_items(char["id"], {364740: 1, 353486: 10}, fittings))
+        self.assertFalse(self.store.give_starting_items(char["id"], {364740: 1}, fittings))
+        self.assertEqual(self.store.quantity(char["id"], 364740), 1)
+        self.assertEqual([(f["name"], f["idx"], f["is_default"]) for f in self.store.fittings_of(char["id"])],
+                         [("Frontline", 0, 1), ("LAV", 1, 0)])
+
+    def test_fittings(self):
+        char = self.char(self.store.user_for_online_id("x")["id"])
+        a = self.store.create_fitting(char["id"], 354941, "A")
+        self.store.set_slot(a["id"], "WP-1", 353120)
+        self.store.set_slot(a["id"], "GS-1", None)
+        b = self.store.create_fitting(char["id"], 354941, "B", slots=self.store.fitting_slots(a["id"]))
+        self.assertEqual(self.store.fitting_slots(b["id"]), {"WP-1": 353120, "GS-1": None})
+        self.store.update_fitting(b["id"], name="C", index=0, isDefault=True, readonly=True)
+        self.assertEqual([f["name"] for f in self.store.fittings_of(char["id"])], ["A", "C"])  # same index, by id
+        self.assertEqual(self.store.fitting(b["id"])["is_default"], 1)
+        self.store.delete_fitting(a["id"])
+        self.assertIsNone(self.store.fitting(a["id"]))
+        self.assertEqual(self.store.fitting_slots(a["id"]), {})
+
+    def test_aur_and_lp_defaults(self):
+        user = self.store.user_for_online_id("x")
+        char = self.char(user["id"])
+        self.assertEqual(self.store.aur(user["id"], 500), 500)
+        self.store.set_aur(user["id"], 0)
+        self.assertEqual(self.store.aur(user["id"], 500), 0)
+        self.assertEqual(self.store.lp(char["id"], 1000198, 7), 7)
+        self.store.set_lp(char["id"], 1000198, 3)
+        self.assertEqual((self.store.lp(char["id"], 1000198, 7), self.store.lp(char["id"], 1000262, 7)), (3, 7))
 
 if __name__ == "__main__":
     unittest.main()

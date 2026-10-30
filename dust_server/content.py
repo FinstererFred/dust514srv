@@ -175,3 +175,13 @@ def loyalty_offers(config=None):
         result[corp] = [(int(type_id), offer.get("lp", 0), offer.get("isk", 0))
                         for type_id, offer in (store.get("offers") or {}).items()]
     return result
+
+
+_fitting_types = []
+
+
+def fitting_types():
+    """{adapter typeID: {"category", "slots": [{"name", "visible", "defaultModule"}]}} for dropsuits and vehicles."""
+    if not _fitting_types:
+        _fitting_types.append({a["id"]: a for a in offline_bridge.fittings()["adapters"]})
+    return _fitting_types[0]

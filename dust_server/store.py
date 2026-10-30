@@ -1,4 +1,4 @@
-"""Accounts, tokens, characters and skills in SQLite (docs/character_server_plan.md, stage 1a).
+"""Accounts, tokens, characters, skills, inventory and fittings in SQLite (docs/character_server_plan.md, stages 1a, 5).
 
 One connection and one lock for the whole server; crest_app.py and admin.py only call the functions here and know
 no SQL. The file is dust_server/state/dust.sqlite, or DUST_STATE_DIR/dust.sqlite. Migrations run at open; before
@@ -6,6 +6,11 @@ one runs on an existing file, a copy dust.sqlite.bak-<old version> is kept.
 
 Total SP of a character = sp_base + passive_sp * sp_per_day * (now - sp_since) / 86400, rounded down. Every change
 of passive_sp or sp_per_day first books the SP earned so far into sp_base (sp_since = now).
+
+Inventory: one stack per character and type; the row id is the item ID the client sees. Fittings: a row per fitting,
+fitting_slots only for slots set by hand (no row = the slot's default module, a row with type_id NULL = unfitted).
+AUR is per user and LP per character and corporation; NULL or no row means "not set yet", the caller's default applies
+(the global values in content/wallet.json and loyalty.json, as before stage 5).
 """
 
 import os
@@ -39,10 +44,28 @@ MIGRATIONS = [
     CREATE TABLE skills (character_id INTEGER NOT NULL, type_id INTEGER NOT NULL, level INTEGER NOT NULL,
                          PRIMARY KEY (character_id, type_id));
     """,
+    # version 2 (stage 5: inventory, fittings, AUR per user, LP per character)
+    """
+    CREATE TABLE inventory (id INTEGER PRIMARY KEY, character_id INTEGER NOT NULL, type_id INTEGER NOT NULL,
+                            quantity INTEGER NOT NULL, UNIQUE (character_id, type_id));
+    CREATE TABLE fittings (id INTEGER PRIMARY KEY, character_id INTEGER NOT NULL, name TEXT NOT NULL,
+                           type_id INTEGER NOT NULL, idx INTEGER NOT NULL, is_default INTEGER NOT NULL DEFAULT 0);
+    CREATE INDEX fittings_character ON fittings (character_id);
+    CREATE TABLE fitting_slots (fitting_id INTEGER NOT NULL, slot TEXT NOT NULL, type_id INTEGER,
+                                PRIMARY KEY (fitting_id, slot));
+    CREATE TABLE loyalty (character_id INTEGER NOT NULL, corporation_id INTEGER NOT NULL, balance INTEGER NOT NULL,
+                          PRIMARY KEY (character_id, corporation_id));
+    ALTER TABLE characters ADD COLUMN items_given INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE users ADD COLUMN aur INTEGER
+    """,
 ]
+
+FIRST_ITEM_ID = 1000003800001  # CCP's offline inventory uses 1000003700001 and up
+FIRST_FITTING_ID = 1000  # CCP's offline fittings are 100 and 101
 
 # Fields a caller may change with update_character (the SP fields go through set_passive/add_sp).
 UPDATABLE = {"name", "portrait_id", "npe_state", "aur_spent", "isk", "corporation_id", "delete_ready_at", "deleted"}
+FITTING_FIELDS = {"name": "name", "index": "idx", "isDefault": "is_default"}  # MercenaryFittingUpdate-v1 -> column
 
 
 class Store:
@@ -87,7 +110,8 @@ class Store:
             user = self._one("SELECT * FROM users WHERE online_id = ?", (online_id,))
             if not user:
                 user_id = max(FIRST_USER_ID - 1, self._max_id("users")) + 1
-                self.db.execute("INSERT INTO users VALUES (?, ?, ?)", (user_id, online_id, time.time()))
+                self.db.execute("INSERT INTO users (id, online_id, created_at) VALUES (?, ?, ?)",
+                                (user_id, online_id, time.time()))
                 user = self.user(user_id)
             return user
 
@@ -203,6 +227,113 @@ class Store:
             self.db.executemany("INSERT INTO skills VALUES (?, ?, ?)",
                                 [(char_id, t, level) for t, level in skills.items()])
 
+    # --- inventory (stage 5) -----------------------------------------------------------------------------------
+
+    def inventory_of(self, char_id):
+        return self._all("SELECT * FROM inventory WHERE character_id = ? ORDER BY id", (char_id,))
+
+    def quantity(self, char_id, type_id):
+        row = self._one("SELECT quantity FROM inventory WHERE character_id = ? AND type_id = ?", (char_id, type_id))
+        return row["quantity"] if row else 0
+
+    def add_items(self, char_id, items):
+        """Add {typeID: quantity} (negative takes away); returns the changed stacks, quantity 0 for removed ones.
+
+        Raises NotEnough (and changes nothing) if a stack would go below 0."""
+        changed = []
+        with self.transaction():
+            for type_id, amount in items.items():
+                row = self._one("SELECT * FROM inventory WHERE character_id = ? AND type_id = ?", (char_id, type_id))
+                have = row["quantity"] if row else 0
+                if have + amount < 0:
+                    raise NotEnough(type_id, have, -amount)
+                if not amount:
+                    continue
+                if not row:
+                    item_id = max(FIRST_ITEM_ID - 1, self._max_id("inventory")) + 1
+                    self.db.execute("INSERT INTO inventory VALUES (?, ?, ?, ?)", (item_id, char_id, type_id, amount))
+                    row = {"id": item_id, "character_id": char_id, "type_id": type_id}
+                elif have + amount:
+                    self.db.execute("UPDATE inventory SET quantity = ? WHERE id = ?", (have + amount, row["id"]))
+                else:
+                    self.db.execute("DELETE FROM inventory WHERE id = ?", (row["id"],))
+                changed.append({**row, "quantity": have + amount})
+        return changed
+
+    def give_starting_items(self, char_id, inventory, fittings):
+        """Once per character: the specialty's starting inventory ({typeID: quantity}) and starting fittings
+        ([(adapter typeID, name, is_default)]). Returns True if they were given now."""
+        with self.transaction():
+            char = self.character(char_id)
+            if not char or char["items_given"]:
+                return False
+            self.add_items(char_id, inventory)
+            for type_id, name, is_default in fittings:
+                self.create_fitting(char_id, type_id, name, is_default=is_default)
+            self.db.execute("UPDATE characters SET items_given = 1 WHERE id = ?", (char_id,))
+        return True
+
+    # --- fittings (stage 5) ------------------------------------------------------------------------------------
+
+    def fittings_of(self, char_id):
+        return self._all("SELECT * FROM fittings WHERE character_id = ? ORDER BY idx, id", (char_id,))
+
+    def fitting(self, fitting_id):
+        return self._one("SELECT * FROM fittings WHERE id = ?", (fitting_id,))
+
+    def create_fitting(self, char_id, type_id, name, index=None, is_default=False, slots=None):
+        """A new fitting; index None = after the last one, slots = {slot: typeID or None} set by hand."""
+        with self.transaction():
+            if index is None:
+                index = 1 + max([f["idx"] for f in self.fittings_of(char_id)], default=-1)
+            fitting_id = max(FIRST_FITTING_ID - 1, self._max_id("fittings")) + 1
+            self.db.execute("INSERT INTO fittings VALUES (?, ?, ?, ?, ?, ?)",
+                            (fitting_id, char_id, name, type_id, index, int(bool(is_default))))
+            self.db.executemany("INSERT INTO fitting_slots VALUES (?, ?, ?)",
+                                [(fitting_id, slot, t) for slot, t in (slots or {}).items()])
+        return self.fitting(fitting_id)
+
+    def update_fitting(self, fitting_id, **fields):
+        """Fields by their CREST names (name, index, isDefault); others are ignored."""
+        columns = {FITTING_FIELDS[k]: (v if k == "name" else int(v)) for k, v in fields.items() if k in FITTING_FIELDS}
+        if columns:
+            with self.transaction():
+                self.db.execute(f"UPDATE fittings SET {', '.join(f'{c} = ?' for c in columns)} WHERE id = ?",
+                                (*columns.values(), fitting_id))
+        return self.fitting(fitting_id)
+
+    def delete_fitting(self, fitting_id):
+        with self.transaction():
+            self.db.execute("DELETE FROM fitting_slots WHERE fitting_id = ?", (fitting_id,))
+            self.db.execute("DELETE FROM fittings WHERE id = ?", (fitting_id,))
+
+    def fitting_slots(self, fitting_id):
+        return {r["slot"]: r["type_id"] for r in self._all(
+            "SELECT slot, type_id FROM fitting_slots WHERE fitting_id = ?", (fitting_id,))}
+
+    def set_slot(self, fitting_id, slot, type_id):
+        """type_id None = unfitted (also for a slot with a default module)."""
+        with self.transaction():
+            self.db.execute("INSERT OR REPLACE INTO fitting_slots VALUES (?, ?, ?)", (fitting_id, slot, type_id))
+
+    # --- AUR (per user) and LP (per character and corporation), stage 5 ----------------------------------------
+
+    def aur(self, user_id, default):
+        row = self._one("SELECT aur FROM users WHERE id = ?", (user_id,))
+        return default if not row or row["aur"] is None else row["aur"]
+
+    def set_aur(self, user_id, amount):
+        with self.transaction():
+            self.db.execute("UPDATE users SET aur = ? WHERE id = ?", (amount, user_id))
+
+    def lp(self, char_id, corp_id, default):
+        row = self._one("SELECT balance FROM loyalty WHERE character_id = ? AND corporation_id = ?", (char_id, corp_id))
+        return row["balance"] if row else default
+
+    def set_lp(self, char_id, corp_id, amount):
+        with self.transaction():
+            self.db.execute("INSERT OR REPLACE INTO loyalty VALUES (?, ?, ?)", (char_id, corp_id, amount))
+
     def _max_id(self, table):
         return self._one(f"SELECT COALESCE(MAX(id), 0) AS id FROM {table}")["id"]
 
@@ -214,6 +345,10 @@ class Store:
     def _all(self, sql, args=()):
         with self.lock:
             return [dict(r) for r in self.db.execute(sql, args).fetchall()]
+
+
+class NotEnough(Exception):
+    """add_items: (typeID, quantity there, quantity asked for)"""
 
 
 class _Transaction:

@@ -6,6 +6,7 @@
 #   GET /catalog  market groups and items with names and base prices (catalog.py)
 #   GET /specialties  starting values per character specialty (specialties.py)
 #   GET /skills  skills with cost multiplier and prerequisites, the cost table (skilldata.py)
+#   GET /fittings  adapters (dropsuits, vehicles) with fitting category and slots (fittingdata.py)
 import BaseHTTPServer
 import SocketServer
 import json
@@ -54,7 +55,7 @@ def dispatch(method, path, parameters=None, data=None):
         return {'found': True, 'error': traceback.format_exc()}
 
 
-BUILDERS = {'/catalog': 'catalog', '/specialties': 'specialties', '/skills': 'skilldata'}
+BUILDERS = {'/catalog': 'catalog', '/specialties': 'specialties', '/skills': 'skilldata', '/fittings': 'fittingdata'}
 _built = {}  # path -> JSON, built on first request, the CATMA DB does not change while the service runs
 
 

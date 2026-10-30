@@ -215,7 +215,25 @@ def own_character(req, char_id, private=False):
     char = store.get().character(char_id)
     if not char or (private and (current_user(req) or {}).get("id") != char["user_id"]):
         raise CharacterMissing(char_id)
+    if private:
+        ACTIVE_CHARACTERS[char["user_id"]] = char["id"]
     return char
+
+
+# The character a user plays right now: the market, the AUR store and the loyalty stores have no character in their
+# paths. It is the one whose private documents the owner asked for last (on selection the client opens its
+# notification stream and loads them); after a server restart with only one character, that one.
+ACTIVE_CHARACTERS = {}  # user id -> character id
+
+
+def active_character(req):
+    """The caller's active character from the store, or None (store off, host, no character known)."""
+    user = current_user(req)
+    if not user:
+        return None
+    chars = store.get().characters_of(user["id"])
+    char = next((c for c in chars if c["id"] == ACTIVE_CHARACTERS.get(user["id"])), None)
+    return char or (chars[0] if len(chars) == 1 else None)
 
 
 class CharacterMissing(Exception):
@@ -631,18 +649,24 @@ def skill_rejected(char, action, code):
 
 @route("POST", r"^/characters/(\d+)/mercenary/skills/$")
 def read_skill_book(req):
-    # skillClient.UseSkillbook: {"skillTypeID"}; the skill becomes known at level 0. Skill books are not taken
-    # from the inventory yet (CCP's offline inventory has 999 of everything, stage 5).
+    # skillClient.UseSkillbook: {"skillTypeID"}; the skill becomes known at level 0 and the book (an inventory item
+    # with the skill's typeID) is used up.
     char = own_character(req, path_ids(req, r"^/characters/(\d+)/mercenary/skills/$")[0], private=True)
     if not char:
         return OFFLINE
+    give_starting_items(char)
     type_id = int((req["body"] if isinstance(req["body"], dict) else {}).get("skillTypeID") or 0)
     rules, db = content.skill_rules(), store.get()
     with db.transaction():
         code = rules.check_book(db.skills_of(char["id"]), type_id)
         if code:
             return skill_rejected(char, f"book {type_id}", code)
+        try:
+            changed = db.add_items(char["id"], {type_id: -1})
+        except store.NotEnough:
+            return skill_rejected(char, f"book {type_id}", "no skill book in the inventory")
         db.set_skill(char["id"], type_id, 0)
+    notify_items(req, char["id"], changed)
     return {}
 
 
@@ -666,16 +690,18 @@ def upgrade_skill(req):
 
 
 CORPORATION_SKILL_GROUP = 363476  # market group "Corporations": skills the reset leaves alone (item 367499 text)
+RESPEC_ITEM = 367499  # "Skill Tree Reset and Refund" (deeConst.SKILL_REST_ITEMID)
 
 
 @route("PUT", r"^/characters/(\d+)/mercenary/respec/$")
 def respec(req):
     # uiSvcSkill.CallbackRespec, after using item 367499 "Skill Tree Reset and Refund" in the assets: PUT {}
-    # (MercenaryNull-v1), then the client reloads its skills. The item is not used up: the inventory is still CCP's.
+    # (MercenaryNull-v1), then the client reloads its skills. The item is used up here, the client does not post it.
     char_id = path_ids(req, r"^/characters/(\d+)/mercenary/respec/$")[0]
     char = own_character(req, char_id, private=True)
     if not char:
         return OFFLINE
+    give_starting_items(char)
     cat, market, db = content.catalog(), content.isk_market(), store.get()
     corp_groups = cat.subtree(CORPORATION_SKILL_GROUP)
     keep = {t for t in content.skill_rules().skills if t in cat.items and cat.items[t]["categoryID"] in corp_groups}
@@ -683,11 +709,17 @@ def respec(req):
     starting = {s["skillTypeID"]: s["skillLevel"] for s in specialty["startingSkills"]}
     with db.transaction():
         char = db.character(char_id)
+        try:
+            changed = db.add_items(char_id, {RESPEC_ITEM: -1})
+        except store.NotEnough:
+            return skill_rejected(char, "respec", f"no item {RESPEC_ITEM} in the inventory")
         new, refunded = skills.respec(db.skills_of(char_id), starting, keep)
         isk = sum(round(skills.SKILLBOOK_REFUND * (market.get(t) or cat.items.get(t, {}).get("basePrice", 0)))
                   for t in refunded)
         db.replace_skills(char_id, new)
-        db.update_character(char_id, isk=char["isk"] + isk)
+        char = db.update_character(char_id, isk=char["isk"] + isk)
+    notify_items(req, char_id, changed)
+    notify_isk(req, char)
     print(f"skills: {char_id} respec, {len(refunded)} skillbooks refunded for {isk} ISK", flush=True)
     return {}
 
@@ -748,6 +780,8 @@ def update_mercenary(req):
 
 @route("POST", r"^/(users|characters)/\d+/notifications/$")
 def create_notification_stream(req):
+    if req["path"].startswith("/characters/"):
+        own_character(req, path_ids(req, r"^/characters/(\d+)/")[0], private=True)  # becomes the active one
     stream_id = HUB.create(req["path"], client_key(req))
     return RawResponse(b"", "application/json", {"Location": f"{req['base']}/notifications/streams/{stream_id}/"}, status=201)
 
@@ -933,8 +967,22 @@ def loyalty_stores(req):
         corporation = {"id": corp, "name": cat.groups[group_id]["name"], "href": f"{req['base']}/corporations/{corp}/"}
         href = f"{req['base']}/dust/asset/loyaltyStores/{corp}/"
         items.append({"href": href, "id": corp, "corporation": corporation,
-                      "balance": (stores.get(str(corp)) or {}).get("balance", 0), "offers": {"href": f"{href}offers/"}})
+                      "balance": lp_balance(active_character(req), corp, stores), "offers": {"href": f"{href}offers/"}})
     return collection(items)
+
+
+def lp_balance(char, corp, stores=None):
+    """LP of our own character with a corporation; before the first purchase (and for CCP's offline characters)
+    the balance set in the web admin (content/loyalty.json)."""
+    stores = stores or content.load("loyalty")["stores"]
+    default = (stores.get(str(corp)) or {}).get("balance", 0)
+    return store.get().lp(char["id"], corp, default) if char else default
+
+
+def aur_balance(user):
+    """AUR of a user (store.py); before the first purchase, and for the shared offline user, content/wallet.json."""
+    default = content.load("wallet")["aur"]
+    return store.get().aur(user["id"], default) if user else default
 
 
 @route("GET", r"^/dust/asset/loyaltyStores/(\d+)/offers/$")
@@ -963,9 +1011,10 @@ def account(req):
     if currency:
         # VgsAccount-v1 (aurumClient via vgsData2.GetAccount); CCP's offline routes answer it with the ISK collection.
         if currency == "AUR":
-            balance = wallet["aur"]
+            balance = aur_balance(current_user(req))
         else:
-            balance = sum(lp.get("balance", 0) for lp in content.load("loyalty")["stores"].values())
+            char = active_character(req)
+            balance = sum(lp_balance(char, corp) for corp in content.LOYALTY_STORES)
         return {"id": account_id, "currency": currency, "balance": balance, "freeBalance": balance, "totalSpent": 0,
                 "href": f"{req['base']}{req['path']}", "transactions": {"href": f"{req['base']}{req['path']}transactions/"}}
     # A character's accounts (myCharactersClient._GetAccountIfNeeded), the wallet first.
@@ -976,6 +1025,285 @@ def account(req):
 def character_account(req):
     owner_id, key = map(int, re.match(r"^/accounts/(\d+)/(\d+)/$", req["path"]).groups())
     return isk_account(req, owner_id, key, content.load("wallet"))
+
+
+# --- Stage 5: inventory, fittings and purchases of our own characters (store.py) -------------------------------
+# The client changes its cached inventory only through OnItemsChanged notifications, and after a purchase its popup
+# waits until one names the bought type. Wallet and AUR display follow OnAccountUpdated and OnDustUserAurumChange.
+
+def type_name(type_id):
+    item = content.catalog().items.get(type_id)
+    return item["name"] if item else (content.fitting_types().get(type_id) or {}).get("typeName", str(type_id))
+
+
+def type_ref(req, type_id):
+    if type_id is None:
+        return {"id": None, "name": "", "href": f"{req['base']}/types/None/"}
+    return {"id": type_id, "name": type_name(type_id), "href": f"{req['base']}/types/{type_id}/"}
+
+
+def give_starting_items(char):
+    """The specialty's startingInventory, once per character; adapters marked shouldGiveFitting also as fittings."""
+    if char["items_given"]:
+        return
+    specialty = next(s for s in content.specialties() if s["id"] == char["specialty_id"])
+    inventory, fittings = {}, []
+    for entry in specialty["startingInventory"]:
+        inventory[entry["type"]] = inventory.get(entry["type"], 0) + entry["quantity"]
+        if entry["shouldGiveFitting"] and entry["type"] in content.fitting_types():
+            fittings.append((entry["type"], type_name(entry["type"]), entry["shouldMakeFittingDefault"]))
+    if store.get().give_starting_items(char["id"], inventory, fittings):
+        print(f"inventory: {char['id']} got {len(inventory)} starting items and {len(fittings)} fittings", flush=True)
+
+
+def inventory_href(req, char_id):
+    return f"{req['base']}/inventory/{char_id}/owner/{char_id}/all/"
+
+
+def inventory_entry(req, char_id, row):
+    # InventoryItem-v1 as read by inventoryLocation.InventoryItem and CCP's offline handler
+    location = inventory_href(req, char_id)
+    return {"slot": "all", "item": {"id": row["id"], "href": f"{req['base']}/items/{row['id']}/"},
+            "href": f"{location}{row['id']}/", "location": {"href": location},
+            "owner": {"id": char_id, "href": f"{req['base']}/characters/{char_id}/"}, "stacksize": row["quantity"],
+            "type": {"id": row["type_id"], "href": f"{req['base']}/types/{row['type_id']}/"}}
+
+
+def notify_items(req, char_id, changed):
+    # inventoryClient2.OnItemsChangedFromBackend: stacksize 0 removes the item from the client's cache
+    if changed:
+        notify_character(char_id, "OnItemsChanged", {"items": [
+            {"item": inventory_entry(req, char_id, row), "changes": {}} for row in changed]})
+
+
+def notify_isk(req, char):
+    # accountingClient.OnAccountUpdatedFromBackend; the href is the character's "deposit" account
+    notify_character(char["id"], "OnAccountUpdated", {
+        "href": f"{req['base']}/accounts/{char['id']}/{ISK_ACCOUNT_KEY}/", "balance": float(char["isk"])})
+
+
+@route("GET", r"^/inventory/(\d+)/owner/(\d+)/([a-zA-Z_.]+)/$")
+def inventory(req):
+    # InventoryItemCollection-v1; the personal inventory ("databank") is slot "all", other slots are empty.
+    char = own_character(req, path_ids(req, r"^/inventory/(\d+)/owner/\d+/")[0], private=True)
+    if not char:
+        return OFFLINE
+    give_starting_items(char)
+    if not req["path"].endswith("/all/"):
+        return collection([])
+    return collection([inventory_entry(req, char["id"], row) for row in store.get().inventory_of(char["id"])])
+
+
+FITTING_NAME_CODE = "{typeName}"  # fittingClient3._TYPE_NAME_CODE: the client lets the backend fill in the name
+
+
+def fitting_href(req, fitting):
+    return f"{req['base']}/characters/{fitting['character_id']}/mercenary/fittings/{fitting['id']}/"
+
+
+def fitting_summary(req, fitting):
+    # MercenaryFittingCollection-v1 entry (fittingClient3)
+    return {"href": fitting_href(req, fitting), "name": fitting["name"], "index": fitting["idx"],
+            "type": type_ref(req, fitting["type_id"]), "paint": type_ref(req, None),
+            "isDefault": bool(fitting["is_default"]), "readonly": False}
+
+
+def fitting_document(req, fitting):
+    # MercenaryFitting-v1: the adapter's slots in CATMA order; a slot set by hand overrides its default module.
+    # GetRequiredItems does not ask for a module that is the slot's default (preset militia suits).
+    doc, href = fitting_summary(req, fitting), fitting_href(req, fitting)
+    fitted = store.get().fitting_slots(fitting["id"])
+    adapter = content.fitting_types().get(fitting["type_id"]) or {"slots": []}
+    doc["slots"] = [{"name": slot["name"], "visible": slot["visible"], "href": f"{href}slots/{slot['name']}/",
+                     "module": type_ref(req, fitted.get(slot["name"], slot["defaultModule"])),
+                     "defaultModule": type_ref(req, slot["defaultModule"]), "paint": type_ref(req, None)}
+                    for slot in adapter["slots"]]
+    return doc
+
+
+def own_fitting(req, pattern):
+    """(character, fitting) for a fitting path of our own character; (None, None) for CCP's offline characters."""
+    char_id, fitting_id, *_ = re.match(pattern, req["path"]).groups()
+    char = own_character(req, int(char_id), private=True)
+    if not char:
+        return None, None
+    fitting = store.get().fitting(int(fitting_id)) if fitting_id.isdigit() else None
+    if not fitting or fitting["character_id"] != char["id"]:
+        raise CharacterMissing(char["id"])
+    return char, fitting
+
+
+@route("GET", r"^/characters/(\d+)/mercenary/fittings/$")
+def fittings(req):
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/")[0], private=True)
+    if not char:
+        return OFFLINE
+    give_starting_items(char)
+    return collection([fitting_summary(req, f) for f in store.get().fittings_of(char["id"])])
+
+
+@route("POST", r"^/characters/(\d+)/mercenary/fittings/$")
+def create_fitting(req):
+    # MercenaryFittingCreate-v1 {type, index, name, isDefault, copySlotsFrom?}; the client reads the Location header.
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/")[0], private=True)
+    if not char:
+        return OFFLINE
+    body = req["body"] if isinstance(req["body"], dict) else {}
+    type_id = (body.get("type") or {}).get("id") or id_from_href((body.get("type") or {}).get("href"))
+    if type_id not in content.fitting_types():
+        return RawResponse(b'{"message": "not a dropsuit or vehicle"}', "application/json", status=400)
+    db, slots = store.get(), None
+    source = id_from_href((body.get("copySlotsFrom") or {}).get("href"))
+    if source:
+        original = db.fitting(source)
+        if original and original["character_id"] == char["id"]:
+            slots = db.fitting_slots(source)
+    name = (body.get("name") or FITTING_NAME_CODE).replace(FITTING_NAME_CODE, type_name(type_id))
+    index = body.get("index") if isinstance(body.get("index"), int) else None
+    fitting = db.create_fitting(char["id"], type_id, name, index, bool(body.get("isDefault")), slots)
+    print(f"fittings: {char['id']} created {fitting['id']} {name!r} ({type_id})", flush=True)
+    return RawResponse(b"", "application/json", {"Location": fitting_href(req, fitting)}, status=201)
+
+
+@route("GET", r"^/characters/(\d+)/mercenary/fittings/(\w+)/$")
+def fitting(req):
+    char, fitting = own_fitting(req, r"^/characters/(\d+)/mercenary/fittings/(\w+)/$")
+    return fitting_document(req, fitting) if char else OFFLINE
+
+
+@route("PUT", r"^/characters/(\d+)/mercenary/fittings/(\w+)/$")
+def update_fitting(req):
+    # MercenaryFittingUpdate-v1: {name} | {index} | {isDefault}; the client unsets the old default itself.
+    char, fitting = own_fitting(req, r"^/characters/(\d+)/mercenary/fittings/(\w+)/$")
+    if not char:
+        return OFFLINE
+    store.get().update_fitting(fitting["id"], **(req["body"] if isinstance(req["body"], dict) else {}))
+    return {}
+
+
+@route("DELETE", r"^/characters/(\d+)/mercenary/fittings/(\w+)/$")
+def delete_fitting(req):
+    char, fitting = own_fitting(req, r"^/characters/(\d+)/mercenary/fittings/(\w+)/$")
+    if not char:
+        return OFFLINE
+    store.get().delete_fitting(fitting["id"])
+    print(f"fittings: {char['id']} deleted {fitting['id']} {fitting['name']!r}", flush=True)
+    return {}
+
+
+@route("PUT", r"^/characters/(\d+)/mercenary/fittings/(\w+)/slots/([\w-]+)/$")
+@route("DELETE", r"^/characters/(\d+)/mercenary/fittings/(\w+)/slots/([\w-]+)/$")
+def fitting_slot(req):
+    # PUT MercenaryFittingSlotUpdate-v1 {module: {id, href}} fits a module (or paint), DELETE unfits the slot.
+    # The client checks slot type and adapter restrictions before; the modules need not be in the inventory yet
+    # (the fitting screen offers to buy what is missing).
+    pattern = r"^/characters/(\d+)/mercenary/fittings/(\w+)/slots/([\w-]+)/$"
+    char, fitting = own_fitting(req, pattern)
+    if not char:
+        return OFFLINE
+    slot = re.match(pattern, req["path"]).group(3)
+    slots = (content.fitting_types().get(fitting["type_id"]) or {"slots": []})["slots"]
+    if slot not in {s["name"] for s in slots}:
+        raise CharacterMissing(char["id"])
+    module = None
+    if req["method"] == "PUT":
+        body = (req["body"] if isinstance(req["body"], dict) else {}).get("module") or {}
+        module = body.get("id") or id_from_href(body.get("href"))
+    store.get().set_slot(fitting["id"], slot, module)
+    return {}
+
+
+NOT_ENOUGH = {"ISK": ("Purchase failed", "Not enough ISK."), "AUR": ("Purchase failed", "Not enough AUR."),
+              "LP": ("Purchase failed", "Not enough loyalty points.")}
+
+
+def buy(req, char, items, isk=0, aur=0, lp=None):
+    """Book a purchase of our own character: take ISK, AUR (the user's) and LP ((corporation, amount)), add `items`
+    ({typeID: quantity}) and tell the client. A 403 (with a message) if something is short; the client shows it."""
+    give_starting_items(char)
+    db, user = store.get(), store.get().user(char["user_id"])
+    with db.transaction():
+        char = db.character(char["id"])
+        balance_aur = aur_balance(user)
+        balance_lp = lp_balance(char, lp[0]) if lp else 0
+        for currency, cost, balance in (("ISK", isk, char["isk"]), ("AUR", aur, balance_aur),
+                                        ("LP", lp[1] if lp else 0, balance_lp)):
+            if cost > balance:
+                print(f"market: {char['id']} cannot buy {items} for {cost} {currency}, has {balance}", flush=True)
+                return forbidden(NOT_ENOUGH[currency])
+        if isk:
+            char = db.update_character(char["id"], isk=char["isk"] - isk)
+        if aur:
+            db.set_aur(user["id"], balance_aur - aur)
+        if lp:
+            db.set_lp(char["id"], lp[0], balance_lp - lp[1])
+        changed = db.add_items(char["id"], items)
+    if isk:
+        notify_isk(req, char)
+    if aur:
+        notify_character(char["id"], "OnDustUserAurumChange", {"balance": balance_aur - aur})
+    if lp:
+        notify_character(char["id"], "OnDustLoyaltyStoreUpdated", {})  # loyaltyStoreClient reloads the balances
+    notify_items(req, char["id"], changed)
+    price = ", ".join(f"{amount} {c}" for c, amount in (("ISK", isk), ("AUR", aur), ("LP", lp and lp[1])) if amount)
+    print(f"market: {char['id']} bought {items} for {price or 'nothing'}", flush=True)
+    return None
+
+
+@route("POST", r"^/market/(\d+)/orders/buy/$")
+def market_buy(req):
+    # dustMarketClient.PurchaseItem: MarketOrder-v1 {type: {href}, price, volume, ...}; PurchaseMultiple posts
+    # MarketOrderCollection-v1 {items: [order, ...]}. The price is ours, not the one in the order. 404 = the client's
+    # "item not found on the market".
+    char = active_character(req)
+    if not char:
+        return OFFLINE
+    body = req["body"] if isinstance(req["body"], dict) else {}
+    prices, items, cost = content.isk_market(), {}, 0
+    for order in body.get("items") or [body]:
+        type_id = id_from_href((order.get("type") or {}).get("href"))
+        quantity = int(order.get("volume") or 0)
+        if not prices.get(type_id) or quantity < 1:
+            return RawResponse(b'{"message": "not on the market"}', "application/json", status=404)
+        items[type_id] = items.get(type_id, 0) + quantity
+        cost += prices[type_id] * quantity
+    return buy(req, char, items, isk=cost) or {}
+
+
+@route("POST", r"^/sales/$")
+def aur_sale(req):
+    # vgsClient2._DoPurchase: {storeId, currency, amount, paymentMethodId, saleLines: [{offerId, offerQuantity}]};
+    # our offers have the item's typeID as id (aur_offer). 400 = invalid offer, 409 = the amount does not match
+    # (the client shows its own texts for both). An empty body reaches the client as None = success.
+    char = active_character(req)
+    if not char:
+        return OFFLINE
+    body = req["body"] if isinstance(req["body"], dict) else {}
+    prices, items, cost = content.aur_store(), {}, 0
+    for line in body.get("saleLines") or []:
+        type_id, quantity = line.get("offerId"), int(line.get("offerQuantity") or 0)
+        if not prices.get(type_id) or quantity < 1:
+            return RawResponse(b'{"message": "invalid offer"}', "application/json", status=400)
+        items[type_id] = items.get(type_id, 0) + quantity
+        cost += prices[type_id] * quantity
+    if not items or body.get("amount") != cost:
+        return RawResponse(b'{"message": "amount mismatch"}', "application/json", status=409)
+    return buy(req, char, items, aur=cost) or RawResponse(b"", "application/json")
+
+
+@route("POST", r"^/dust/asset/loyaltyStores/(\d+)/offers/(\d+)/$")
+def loyalty_buy(req):
+    # loyaltyStoreClient.PurchaseItem: DustLoyaltyStoreOffer-v1 {href, quantity, iskCost, lpCost} (totals).
+    char = active_character(req)
+    if not char:
+        return OFFLINE
+    corp, type_id = path_ids(req, r"^/dust/asset/loyaltyStores/(\d+)/offers/(\d+)/$")
+    offer = next((o for o in content.loyalty_offers().get(corp, []) if o[0] == type_id), None)
+    quantity = int((req["body"] if isinstance(req["body"], dict) else {}).get("quantity") or 0)
+    if not offer or quantity < 1:
+        return RawResponse(b'{"message": "not on the market"}', "application/json", status=404)
+    _, lp, isk = offer
+    return buy(req, char, {type_id: quantity}, isk=isk * quantity, lp=(corp, lp * quantity)) or {}
 
 
 # --- Experiment 1: a fake battle (docs/battle_feasibility.md) -------------------------------------
