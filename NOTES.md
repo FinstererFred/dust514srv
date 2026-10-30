@@ -537,6 +537,13 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   `ui/quickFitting._OpenVehicleFittingSubPage`, wenn die UE3-Prüfung `unrealFittingSvc.AllowSpwanVehicleInFitting()` nicht
   `mVehicle_Spawn_OK` liefert. Die Fittings selbst werden dort gar nicht gelesen. Vermutung: Ambush erlaubt keine Fahrzeuge.
   Nächster Test in Skirmish/Domination; erst wenn dort die Kategorien kommen, die Fitting-Liste prüfen.
+  **Skirmish (2026-10-30, Client b, LAV-Fitting `353808:351320,351320,352314`):** Menü und Fitting-Liste gehen, Anfordern
+  endet mit „Vehicle request denied – Location inaccessible“. Host-Log: `DeployVehicleWithFitting` kommt an,
+  `CheckOutFittingForPendingDeployVehicle` checkt aus (kein Kick), direkt danach `ClearPendingVehicleFittingForChar(id, True)`
+  und Rückgabe ins Inventar. Die Ablehnung fällt also in UE3 bei der Landeplatzsuche fürs RDV, nicht in Python/Fitting.
+  Hypothesen: Platzsuche (Trace nach oben/unten) scheitert auf dem Host, weil dort Kollision oder Landezonen fern vom
+  Host-Pawn fehlen (vgl. LOD-Kollision, Patch 0.5), oder Ort ungeeignet (Deckung, Hang). Nächste Tests: auf freier, ebener
+  Fläche anfordern, einmal nahe am Host-Spawn; in Ghidra/UPK den String bzw. `DeployPendingVehicle` suchen.
 - **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
   sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
   Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),
