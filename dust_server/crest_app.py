@@ -541,6 +541,8 @@ def mercenary(req):
         merc["portrait"] = portrait_link(req, char)
         # battleServer._MemberJoinedBattle loads a member's skills from here (stage 4, a real battle server)
         merc["battleSkills"] = merc["skills"]
+        # uiSvcSkill.CallbackRespec reads mercenaryPublicData['respec'] (KeyError without it); CCP's offline data has none
+        merc["respec"] = link(req, f"/characters/{char['id']}/mercenary/respec/")
     else:
         merc = offline_result(req["path"])
     # 03.19 reads mercenaryPublicData['dustAgents'] (dustAgentClient.py); CCP's offline data predates it.
@@ -660,6 +662,33 @@ def upgrade_skill(req):
         if code:
             return skill_rejected(char, f"upgrade {type_id} {current}->{aim}", code)
         db.set_skill(char_id, type_id, aim)
+    return {}
+
+
+CORPORATION_SKILL_GROUP = 363476  # market group "Corporations": skills the reset leaves alone (item 367499 text)
+
+
+@route("PUT", r"^/characters/(\d+)/mercenary/respec/$")
+def respec(req):
+    # uiSvcSkill.CallbackRespec, after using item 367499 "Skill Tree Reset and Refund" in the assets: PUT {}
+    # (MercenaryNull-v1), then the client reloads its skills. The item is not used up: the inventory is still CCP's.
+    char_id = path_ids(req, r"^/characters/(\d+)/mercenary/respec/$")[0]
+    char = own_character(req, char_id, private=True)
+    if not char:
+        return OFFLINE
+    cat, market, db = content.catalog(), content.isk_market(), store.get()
+    corp_groups = cat.subtree(CORPORATION_SKILL_GROUP)
+    keep = {t for t in content.skill_rules().skills if t in cat.items and cat.items[t]["categoryID"] in corp_groups}
+    specialty = next(s for s in content.specialties() if s["id"] == char["specialty_id"])
+    starting = {s["skillTypeID"]: s["skillLevel"] for s in specialty["startingSkills"]}
+    with db.transaction():
+        char = db.character(char_id)
+        new, refunded = skills.respec(db.skills_of(char_id), starting, keep)
+        isk = sum(round(skills.SKILLBOOK_REFUND * (market.get(t) or cat.items.get(t, {}).get("basePrice", 0)))
+                  for t in refunded)
+        db.replace_skills(char_id, new)
+        db.update_character(char_id, isk=char["isk"] + isk)
+    print(f"skills: {char_id} respec, {len(refunded)} skillbooks refunded for {isk} ISK", flush=True)
     return {}
 
 

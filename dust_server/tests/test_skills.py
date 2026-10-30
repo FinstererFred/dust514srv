@@ -50,5 +50,14 @@ class RulesTest(unittest.TestCase):
         self.assertIsNone(self.rules.check_upgrade(known, 6220 + 18650 + 43530, 1, 0, 3))
 
 
+class RespecTest(unittest.TestCase):
+    def test_respec(self):
+        known = {1: 4, 2: 1, 3: 0, 9: 2}  # 1 starting (raised), 2 and 3 bought, 9 a corporation skill
+        new, refunded = skills.respec(known, starting={1: 1, 4: 1}, keep={9})
+        self.assertEqual(new, {1: 1, 4: 1, 9: 2})  # a removed starting skill (4) comes back
+        self.assertEqual(refunded, [2, 3])  # also a book read without training (level 0)
+        self.assertEqual(skills.respec({1: 1}, {1: 1}, set()), ({1: 1}, []))
+
+
 if __name__ == "__main__":
     unittest.main()

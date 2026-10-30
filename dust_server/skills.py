@@ -73,3 +73,19 @@ class Rules:
         if self.cumulative_cost(type_id, aim) - self.cumulative_cost(type_id, current) > self.free_sp(total_sp, known):
             return NOT_ENOUGH_SP
         return None
+
+
+SKILLBOOK_REFUND = 0.8  # item 367499 "Skill Tree Reset and Refund": skillbooks back at 80 % of the market price
+
+
+def respec(known, starting, keep):
+    """Skill tree reset (PUT <mercenary respec>): (new skills, typeIDs whose skillbook is refunded).
+
+    All skills go back to the specialty's `starting` ones ({typeID: level}, their cost is part of the starting SP, so
+    the SP spent come back by themselves); skills in `keep` (corporation skills) stay as they are. Books of skills
+    that were neither starting nor kept were bought and are refunded.
+    """
+    new = dict(starting)
+    new.update({t: level for t, level in known.items() if t in keep})
+    refunded = sorted(t for t in known if t not in starting and t not in keep)
+    return new, refunded

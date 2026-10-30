@@ -385,7 +385,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     kein `PUT`). Die serverseitige Ablehnung ist also nur im Prozess getestet, ein normaler Spieler erreicht sie nicht.
     Passiver Zuwachs bestätigt: Aktivieren in der Auswahl → `PUT …/passiveskillgain/{id}/ {status: 1}`, „ACTIVE“. Danach steigt die SP-Anzeige
     1 SP pro 3,6 s (24 000/Tag), Client und Server liegen nach einigen Minuten gleich.
-    Noch offen: Respec (`PUT` auf den `respec`-Link, vom Server noch nicht behandelt), `IndexError` Dropsuit-Progression.
+    Noch offen: `IndexError` Dropsuit-Progression.
+  - **Respec (2026-10-30):** Im Client nur über das Item 367499 „Skill Tree Reset and Refund“ erreichbar (`inventory2`: Assets → Item →
+    „Reset Skills“, oder `purchasePopup` nach dem Kauf). Kein Menüpunkt im Skill-Bildschirm. Der Client liest
+    `mercenaryPublicData['respec']['href']`, den CCPs Offline-Daten nicht haben (KeyError). Laut Item-Text: Skills zurück,
+    SP erstattet, Corp-Skills bleiben, Skillbücher zu 80 % des Marktpreises erstattet. Umgesetzt als Rückkehr zu den Start-Skills
+    plus Corp-Skills, ISK-Gutschrift. Im Prozess geprüft (Amarr Light Dropsuits → 183 200 ISK), in RPCS3 noch offen.
 - **Stufe 3 (2026-10-30), hinter dem Schalter:** Erstellen und Löschen von Charakteren. Funde aus dem Client-Code:
   - Erstellen schickt nur `{name: "<Vorname> <Nachname>", gender, bloodline: href}`. Rasse, Spezialisierung und Porträt folgen aus der
     Blutlinie. Die Root-Links heißen `bloodlines`, `dustSpecialties`, `dustPortraits`. Der Client vergleicht `race.href` der Blutlinien

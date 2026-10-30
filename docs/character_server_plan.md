@@ -197,6 +197,10 @@ Ziel: Echte Skill-Stufen, Kaufen/Upgraden kostet SP, SP wachsen mit der Zeit.
 7. **Optional 2b:** `respec` (alle Skills zurücksetzen), Sammel-Upgrade
    `POST mercenaryProgressionCollections` (`MercenaryProgressionSkillUpgrade-v1`, `loadoutProgressionClient.py`),
    Skill-Booster (`boosters`).
+   **Respec umgesetzt (2026-10-30):** nur über das Item 367499 „Skill Tree Reset and Refund“ (Assets → benutzen, oder nach dem
+   Kauf im Markt). `PUT <mercenary respec>` setzt die Skills auf die Start-Skills zurück, Corp-Skills (Marktgruppe 363476)
+   bleiben, gekaufte Skillbücher kommen zu 80 % des Marktpreises als ISK zurück. Das Item wird nicht verbraucht, solange das
+   Inventar CCPs gemeinsame Liste ist (Stufe 5).
 
 **Umsetzung (2026-10-30):** `catma_service/skilldata.py` (`GET /skills`), `dust_server/skills.py`, Handler in `crest_app.py`,
 Admin-Seite „Characters“. Abweichungen vom Plan: `POST` legt Stufe **0** an (Skillbuch gelesen), nicht 1; Ablehnungen sind
