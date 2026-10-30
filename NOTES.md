@@ -2,42 +2,43 @@
 
 ## Funde
 
-- **Spielerobergrenze (2026-10-30, Host-Abbild `NPUB30643_guest_memory_20261027_142629_live`, Skirmish, 2 Spieler):**
-  - `DustSkirmishGame_0`: `MaxPlayers=16`, `MaxPlayersAllowed=100`, `MaxSpectators=2`, `NumPlayers=2`. Die 16 kommt aus der Config
-    (alle `Default__Dust*Game` haben 16; `Default__GameInfo` hat `MaxPlayersAllowed=32`, Dust hebt das auf 100).
-  - `DustGRISkirmish_0`: `mMaxPlayersPerTeam=16`, `mMinPlayersPerTeam=0`. Pro Team passen also 16, zusammen 32. Die Gametypes
-    heißen ohnehin `*_32p`.
-  - **Die Grenze am Host ist `GameInfo.MaxPlayers=16` für beide Teams zusammen.** Ohne Änderung wird der 17. Spieler vermutlich
-    abgewiesen (UE3 `AtCapacity` in `PreLogin`).
-  - `InitGame` liest die URL-Option: Im Bytecode steht `MaxPlayers = Clamp(GetIntOption(Options, "MaxPlayers", MaxPlayers), 0,
-    MaxPlayersAllowed)` (StringConst `MaxPlayers` bei 0x44a6d27e, Referenz auf `GameInfo.MaxPlayers` @0x42caea70). Mit
-    `?MaxPlayers=32` in der Startzeile des Hosts (`dust_server/set_host_mode.py`, `start_command`) sollte die Grenze bei 32 liegen.
-  - **Bestätigt (2026-10-30, Ambush, Abbild `..._20261030_082609_live`):** Mit `?MaxPlayers=32` in der Startzeile steht am Host
-    `MaxPlayers=32` (`MaxPlayersAllowed=100`, `NumPlayers=1`). Die Option ist jetzt fest in `set_host_mode.py`. Ob wirklich mehr
-    als 16 Spieler beitreten können, ist damit noch nicht getestet.
-  - DustGame referenziert `AtCapacity` und `PreLogin`, überschreibt sie also möglicherweise. Ob dort eine eigene Grenze steckt,
-    ist nicht geprüft.
+- **Keine Spielerobergrenze im UnrealScript (2026-10-30):**
+  - `DustTeamGame.AtCapacity` ist überschrieben und gibt immer `false` zurück. Die UE3-Prüfung `NumPlayers >= MaxPlayers` in
+    `GameInfo.AtCapacity` greift damit nie. `DustTeamGame.Login` weist nur ab, wenn Charakter-ID oder Character-URI fehlen,
+    `PickTeam` übernimmt das angefragte Team (255 → 0), `ChangeTeam` prüft nur Zuschauer.
+  - `GameInfo.MaxPlayers` ist per Config 16 (alle `Default__Dust*Game`), `MaxPlayersAllowed` 100. Der Host startet seit
+    `450eaa0` mit `?MaxPlayers=32` (`InitGame`: `Clamp(GetIntOption(Options, "MaxPlayers", …), 0, MaxPlayersAllowed)`),
+    im Live-Abbild bestätigt. Wegen `AtCapacity` ist das nicht nötig, schadet aber nicht und hält Anzeigen konsistent.
+  - `DustGRI.mMaxPlayersPerTeam` (live 16) wird nur in `DustTeamGame.PostBeginPlay` gesetzt, also nur zur Anzeige.
+    `DustTeamInfo.mMaxSquadNum`/`mMaxPlayerNumOnSquads` liest nur `MatchOver.DetermineMatchResult`.
+  - Ungeprüft bleiben native Grenzen: NetDriver (C++) und `sys_net`/RPCS3. Das zeigt erst ein Test mit mehr als 2 Clients.
   - Property-Offsets (PS3): `GameInfo.MaxSpectators` 0x214, `MaxPlayers` 0x220, `MaxPlayersAllowed` 0x224, `NumPlayers` 0x228;
-    `DustGRI.mMinPlayersPerTeam` 0x380, `mMaxPlayersPerTeam` 0x384; `DustTeamInfo.mMaxSquadNum` 0x694, `mMaxPlayerNumOnSquads`
-    0x69c (in den TeamInfos beider Abbilder 0). Werkzeug: `research/tools_local/uprops.py`.
-  - Der CREST-Server meldet bereits `maxPlayers: 32` (`crest_app.py`). Laut `eveMimeTypes.py` ist `maxPlayersPerTeam` ein
-    Feld der Battle-Daten aus dem Backend.
+    `DustGRI.mMinPlayersPerTeam` 0x380, `mMaxPlayersPerTeam` 0x384; `DustTeamInfo.mMaxSquadNum` 0x694,
+    `mMaxPlayerNumOnSquads` 0x69c; `WorldInfo.TimeDilation` 0x454, `TimeSeconds` 0x45c, `RealTimeSeconds` 0x460,
+    `DeltaSeconds` 0x468. UProperty-Offset steht bei +0x5c. Werkzeuge: `research/tools_local/uprops.py` (Offsets und
+    Werte aus Abbildern), `uscript.py` direkt auf `COOKEDPS3/DUSTGAME.XXX` und `ENGINE.XXX` (beide unkomprimiert).
+- **Tick-Messung:** `tools/host_tick.py` liest im laufenden RPCS3 `WorldInfo.RealTimeSeconds` in einer engen Schleife (jede
+  Änderung = ein Engine-Tick), dazu CPU je Thread und RAM. Die WorldInfo findet es über die vtable `0x01998b10`; im Heap liegen
+  viele veraltete Kopien, genommen wird die, deren Zeit läuft. Nur Windows (ReadProcessMemory), nicht im Docker-Host.
+- **Ausgangswerte (2026-10-30, lokaler Host mit GPU, Ryzen 9 5900X, Ambush-Deploy-Karte, nur Host, 30 s):**
+  24,9 Ticks/s, Intervall Mittel 40,2 ms, p95 54,9 ms, max 68,9 ms, Spielzeit läuft 1:1. RPCS3 gesamt 690 % CPU, RSS 4,5 GB.
+  Threads: `rsx::thread` 93 %, sechs `MainCellSpursKernel` je 82–92 %, PPU `RenderingThread` 44 %, PPU `main_thread` 30 %,
+  PhysX 1 %.
 
 ## Hypothesen
 
-- Die Spielerzahl könnte zusätzlich zu `GameInfo.MaxPlayers` (siehe Funde) hart begrenzt sein: MaxClients im NetDriver, feste
-  Verbindungs-Arrays, Socket-Limits in `sys_net`/RPCS3, eigene Prüfung in `DustTeamGame.PreLogin`/`AtCapacity`.
+- Der Tick am Host hängt nicht am Game-Thread: `main_thread` braucht nur 30 % eines Kerns und wartet den Rest der Zeit,
+  vermutlich auf `RenderingThread`/RSX oder SPU-Jobs. Wenn das stimmt, kosten zusätzliche Spieler zunächst wenig, und der Hebel
+  liegt beim Rendern auf dem Host (Null-Renderer, Effekte abschalten). Prüfen: dieselbe Messung im Null-Renderer-Host.
+- Die SPU-Kernel-Last von 80–90 % ist möglicherweise größtenteils Warten (SPURS-Polling), keine echte Arbeit.
 - Der Speicher pro Verbindung (Channels, Replikationsstate) könnte im emulierten 256-MB-Hauptspeicher knapp werden, auch wenn ein Client
   32 Pawns problemlos hält. Die 4,6 GB Host-RAM sagen darüber nichts.
 - Untätige Test-Clients unterschätzen die Last am Host deutlich. Für aussagekräftige Messungen braucht es Bewegung und Schüsse.
-- Die 26 FPS bei 2 Spielern sind vermutlich größtenteils Fixkosten (Welt, Physik, SPU-Jobs). Aussagekräftig sind die Kosten pro
-  zusätzlichem Spieler.
 
 ## Ausprobiert
 
 ## Offene Fragen
 
-- Prüft `DustTeamGame.PreLogin`/`AtCapacity` eine eigene Grenze, etwa `mMaxPlayersPerTeam` oder Squad-Größen?
-- Gibt es weitere Grenzen im NetDriver (MaxClients, Verbindungs-Arrays) oder in `sys_net`/RPCS3 (Sockets)?
-- Wie lässt sich der Server-Tick am Host zuverlässig messen, getrennt von der FPS?
+- Gibt es Grenzen im NetDriver (MaxClients, Verbindungs-Arrays) oder in `sys_net`/RPCS3 (Sockets)? (Test mit 3–4 Clients)
+- Wartet `main_thread` auf den RenderingThread, auf RSX oder auf SPU-Jobs? Wie sehen die Werte mit Null-Renderer aus?
 - Wie lassen sich headless Clients mit Eingabe-Wiedergabe betreiben (Pad-Eingaben in RPCS3 skripten)?
