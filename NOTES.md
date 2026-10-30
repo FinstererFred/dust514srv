@@ -5,7 +5,11 @@
 Ziel: Skalierung über 5 Spieler messbar machen (CLAUDE.md Schritte 1–3). Der Host ist kein Engpass mehr (84 Ticks/s bei 5
 Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel CPU, dass auf einem PC bei ~5 Schluss ist.
 
-1. **Billige Test-Clients.** Null-Client läuft (`D:\rpcs3_e`, siehe Funde), braucht aber ≥ 2 Kerne, weil die Threads aktiv
+0. **Fake-Client weiter ausbauen (statt RPCS3-Test-Clients).** Beitritt läuft (siehe Funde). Nächstes: Spawn (Smart-Deploy-RPC)
+   und `ServerMove` auf Kanal 1. Dafür die Client-RPCs aus dem Mitschnitt (Kanal 1, c2s: reliable `db000004…`, unreliable
+   `4d13…`, `367f…`) mit den Funktions-Indizes aus dem Speicher eines echten Clients bzw. Ghidra zuordnen. Mitschnitt mit
+   Spawn und Laufen liegt in `dust_server/logs/udp_proxy.jsonl`. Danach Messreihe 8 → 16 → 32 mit Fake-Clients.
+1. **Billige Test-Clients (RPCS3, zurückgestellt).** Null-Client läuft (`D:\rpcs3_e`, siehe Funde), braucht aber ≥ 2 Kerne, weil die Threads aktiv
    warten. `Max SPURS Threads: 1` erledigt (2 Kerne: 47 Hz). Nächste Hebel an der Render-Kette (RenderingThread +
    rsx::thread ~170 %). `Frame limit: 30` scheidet aus (siehe Ausprobiert). Bleibt: das Rendern selbst weiter abschalten
    (Ghidra: Viewport-Draw bzw. HUD/Scaleform/Post-Processing überspringen, Game-Thread muss weiter ticken), gilt dann auch
@@ -25,6 +29,17 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Fake-Client-Prototyp tritt bei (2026-10-30, `tools/fake_client.py`):** Registriert ein Mitglied über den neuen Dev-Endpunkt
+  `POST /dev/battle/fake_member/` (gleiche Teamverteilung wie echte Beitritte), dann Hello → Challenge → Login (Antwort `"0"`,
+  URL mit Credential) → Welcome → Join, danach nur Acks und Keepalive (alle 50 ms). Hello, Login und Join sind bitgenau gleich
+  mit dem aufgezeichneten echten Client. Fallen dabei: `bControl` heißt „Open-/Close-Flags folgen“ (nur im ersten Bunch),
+  nicht „Control-Channel“; der Host lehnt mit `Engine.AccessControl.InvalidCredential` ab, solange sein Dev-Hook die
+  Mitgliederliste noch nicht abgefragt hat (Poll alle 3 s, beginnt erst einige Sekunden nach dem Laden der Karte), daher
+  Neuversuch. Ergebnis: Host zählt den Fake-Client als Spieler, hält ihn ohne Kick (70 s getestet), öffnet ihm 71–76
+  Actor-Channels und schickt ~9 Pakete/s (ungespawnt). msg 20 muss der Client dafür nicht senden. 5 Fake-Clients
+  gleichzeitig: Host 6 Spieler, 87,8 Ticks/s; je Fake-Client ~0,8 % eines Kerns, 27 MB RAM (RPCS3-Client: ≥ 2 Kerne,
+  2,4 GB). Noch nicht: Spawn, Bewegung, Feuern (RPCs auf dem PlayerController-Kanal 1); ungespawnte Spieler kickt der
+  Chess-Timer nach 7–8 min.
 - **Fake-Client machbar: Gefechtsverkehr ist unverschlüsseltes Standard-UE3 (2026-10-30):** Mitschnitt mit `tools/udp_proxy.py`
   (`fake_battle.json` `target_listen.port` vorübergehend auf 17778, Proxy leitet an 7777 weiter; Log
   `dust_server/logs/udp_proxy.jsonl`), Auswertung mit `tools/ue3_packets.py`. Client e (Null-Renderer): Login, Spawn, Laufen.

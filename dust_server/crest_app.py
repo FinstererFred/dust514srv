@@ -1059,6 +1059,20 @@ def listen_battle_members(req):
         return {"items": list(LISTEN_MEMBERS)}
 
 
+@route("POST", r"^/dev/battle/fake_member/$")
+def fake_battle_member(req):
+    # For tools/fake_client.py: registers a member with the listen-server host like a real join does, without a
+    # game client. The host picks it up with its next /dev/battle/members/ poll.
+    config = fake_battle_config()
+    if not config or config["variant"] != "listen":
+        return RawResponse(b'{"message": "no listen battle"}', "application/json", status=404)
+    team = (req["body"] or {}).get("team") or config.get("listen_team", config["team"])
+    if team == "auto":
+        with LISTEN_LOCK:
+            team = ("defender", "attacker")[len(LISTEN_MEMBERS) % 2]
+    return {**register_listen_member(req, config, team), "server": config["target_listen"]}
+
+
 @route("GET", r"^/dev/host/heartbeat/$")
 def host_heartbeat(req):
     # For the Docker watchdog (docker/host/watchdog.py): seconds since the host's game last polled us.

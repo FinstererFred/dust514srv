@@ -36,7 +36,10 @@ def main():
     while True:
         for key, _ in sel.select(1.0):
             sock, client = key.fileobj, key.data
-            data, addr = sock.recvfrom(65535)
+            try:
+                data, addr = sock.recvfrom(65535)
+            except ConnectionResetError:            # ICMP port unreachable: a client or the host went away
+                continue
             if client is None:                      # from a client
                 client = addr
                 if client not in upstream:
