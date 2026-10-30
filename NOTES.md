@@ -176,6 +176,8 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   - Startcharakter: 136 830 SP stecken in den 8 Start-Skills, 363 170 sind frei.
   - Admin-Seite „Characters“: Konten und Charaktere anzeigen, Gesamt-SP und ISK setzen, Skills auf den Startstand
     zurücksetzen. Ohne Schalter wird die Datenbank nicht geöffnet.
+  - **Vor einem Server-Neustart für Messungen:** `python tools/legacy_parity.py` (2 s, braucht den CATMA-Dienst) zeigt, ob
+    der Server ohne Schalter noch genau wie vor 1a antwortet. Er ist auch Teil der Unit-Tests.
   - Geprüft im Prozess: ohne Schalter 26 Anfragen identisch (auch Skill-POST/PUT), mit Schalter Buch, Upgrade und die vier
     Ablehnungsfälle. In RPCS3 noch offen: Zeigt der Skill-Bildschirm die freien SP richtig, und klappt Upgraden ohne Trennung?
 

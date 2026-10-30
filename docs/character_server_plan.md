@@ -154,6 +154,9 @@ Kerndokumente (Punkte 1–6, 8); **1b** Template-Ersatz für die übrigen Endpun
 Schalter `DUST_CHAR_STORE=1`, Host-Konten über `DUST_HOST_ACCOUNTS` (Standard `DustHost`; sie und der alte Token bleiben auf
 CCP-Offline). Unser eigener Charakterbereich (ab 2100100000) ist strikt: Eine unbekannte ID gibt 404, ebenso ein fremder
 Charakter bei privaten Dokumenten. Öffentliche Dokumente sind für alle lesbar. Tests: `python -m unittest discover -s dust_server/tests`.
+Dazu gehört `tools/legacy_parity.py`, ein Regressionstest. Er vergleicht ohne Schalter 26 Anfragen mit dem Stand vor 1a
+(Commit e930d67) und braucht dafür den CATMA-Dienst; läuft der nicht, überspringt der Unit-Test ihn. Ändert sich das
+Verhalten für die Offline-Charaktere absichtlich, wird die Baseline im Werkzeug angepasst.
 
 **Umsetzung 1b (2026-10-30):** Statt einzelner Handler gibt es einen allgemeinen Rückfall in `CrestApp.dispatch`. Ein Pfad
 mit eigener Charakter-ID geht an CCPs Handler mit 2100001611, danach wird `rebind` angewendet. Er gilt nur für den Besitzer,
