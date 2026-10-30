@@ -30,6 +30,7 @@ Copy-Item "$Rpcs3\config\patch_config.yml" "$target\"
 # Game config: the tested Null-renderer config, adjusted for the patched build in the container
 $cfg = Get-Content "$Rpcs3\config\custom_configs\config_NPUB30643.yml.null_host" -Raw
 $cfg = $cfg -replace '(?m)^(  Frame limit: ).*$', '${1}Auto'        # the flip patch makes the workaround unnecessary
+$cfg = $cfg -replace '(?m)^(  Thread Scheduler Mode: ).*$', '${1}RPCS3 Scheduler'  # +25 % tick with 32 players (NOTES.md)
 $cfg = $cfg -replace '(?m)^(Audio:\r?\n(?:  .*\r?\n)*?  Renderer: ).*$', '${1}"Null"'
 [IO.File]::WriteAllText("$target\custom_configs\config_NPUB30643.yml", $cfg, (New-Object Text.UTF8Encoding $false))
 
