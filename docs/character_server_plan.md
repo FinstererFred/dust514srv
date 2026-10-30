@@ -280,6 +280,8 @@ Werte (Schild/Panzerung) entsprechen den Skills; `client.log` des Hosts zeigt �
 
 ## Stufe 5 – Später
 
+Kleinschrittiger Restplan mit Reihenfolge: `docs/stage5_plan.md`.
+
 - ~~**Fittings pro Charakter**~~ und ~~**Inventar pro Charakter mit Käufen**~~: umgesetzt 2026-10-30 (siehe unten
   „Umsetzung Stufe 5a“).
 - **Inventar im Gefecht:** Der Host nimmt weiter 999 von allem an, Verluste beim Tod werden nicht abgebucht.
