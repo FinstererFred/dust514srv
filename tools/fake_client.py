@@ -30,8 +30,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from ue3_packets import MAX_CHANNELS, MAX_CHSEQUENCE, CHTYPE_MAX, MAX_PACKET, MAX_PACKETID, parse  # noqa: E402
-from ue3_rpc import (INDEX, MAX_INDEX, SHARED_COMPONENT_INDEX, SHARED_COMPONENT_MAX_INDEX, Writer,  # noqa: E402
-                     first_rpc, full_names, int_at)
+from ue3_rpc import ACTOR_RPCS, INDEX, MAX_INDEX, Writer, first_rpc, full_names, int_at  # noqa: E402
 
 CHTYPE_CONTROL, CHTYPE_ACTOR = 1, 2
 MSG_HELLO, MSG_CHALLENGE, MSG_LOGIN, MSG_FAILURE, MSG_JOIN, MSG_WELCOME = 0, 3, 4, 6, 9, 11
@@ -167,6 +166,9 @@ FITTING = "352592:369179+-1,-1+-1,368557+-1,-1+-1,-1+-1,-1+-1"   # recorded defa
 ACCEL = 25000.0                                     # |InAccel| of a recorded walking client
 QUIET = {21, 22, 56, 57, 59, 60, 61}                # PRI/Pawn properties and move corrections, not printed
 ADJUST_WITH_STATE = {57, 60, 61}                    # Short-, -, LongClientAdjustPosition
+SHARED_COMPONENT = "DustGame.Default__DustControllerSharedComponent"
+INVENTORY = "DustGame.Default__DustPawnInventoryManager"
+WEAPON = "DustGame.Default__DustHandheldWeapon"
 SOCKET_NAME = re.compile(r"^(small|medium|large|op|backdrop)\d+$", re.I)
 STRUCTURE_NAME = re.compile(r"^[A-Z]{2}_GA_\w+$")
 NAMES_PER_BUNCH = 8                                 # about 230 bits per name: stays well under MaxPacket
@@ -189,7 +191,7 @@ class Levels:
         self.near_spawn = False
         self.reported = set()
         self.next_id = 0x401                        # our own name cache
-        self.shared_component = None                # channel of our DustControllerSharedComponent
+        self.channels = {}                          # archetype -> our latest actor channel of it (ACTOR_RPCS)
 
     def scan_controller(self, data):
         value = int.from_bytes(data, "little")
@@ -203,8 +205,10 @@ class Levels:
         names = full_names(data)
         for _, cache_id, text, _, _ in names:
             self.cache[cache_id] = text
-            if text == "DustGame.Default__DustControllerSharedComponent" and self.shared_component is None:
-                self.shared_component = channel
+        ref = int_at(data, 0)                       # the open bunch starts with the archetype, full or as a reference
+        archetype = names[0][2] if names and names[0][0] == 0 else self.cache.get(-ref if ref else 0)
+        if archetype in ACTOR_RPCS and not (archetype == SHARED_COMPONENT and archetype in self.channels):
+            self.channels[archetype] = channel      # ours comes first; inventory and weapons reach only their owner
         for _, _, text, _, end in names:
             if text.startswith("MOOD_"):
                 self.structures[channel] = text
@@ -256,6 +260,8 @@ class Player:
         self.levels = Levels()
         self.streamed = False                       # ServerOnStreamingFinished sent for this spawn
         self.next_levels = joined + 1.0             # let the first channel opens arrive
+        self.armed = False                          # weapon selected for the current pawn
+        self.next_fire, self.stop_fire = None, None
 
     def send(self, *rpcs, reliable=True):
         w = Writer()
@@ -263,6 +269,14 @@ class Player:
             w.rpc(*rpc)
         data, nbits = w.payload()
         self.conn.send(actor=[(1, reliable, data, nbits)])
+
+    def send_actor(self, archetype, name, *values):
+        """Reliable RPC on our channel of that actor; False while the host has not opened one."""
+        channel = self.levels.channels.get(archetype)
+        if channel is None:
+            return False
+        self.conn.send(actor=[(channel, True) + Writer().actor_rpc(archetype, name, *values).payload()])
+        return True
 
     def handle(self, data, nbits):
         """One host bunch on the PlayerController channel; follows several RPCs while their parameters are known."""
@@ -281,6 +295,7 @@ class Player:
                 if self.pawn is None:
                     print("pawn %d after %.1f s" % (ref, time.time() - self.joined), flush=True)
                 self.pawn = ref
+                self.armed = False
             elif index == INDEX["VeryShortClientAdjustPosition"]:
                 values = [r.float_() if r.bit() else 0.0 for _ in range(4)]   # TimeStamp, NewLocX, NewLocY, NewLocZ
                 self.location = tuple(values[1:])
@@ -339,12 +354,23 @@ class Player:
             self.begin_spawn = now + 0.5            # after the battle server confirmed the fitting (asynchronous)
             self.next_spawn = now + self.args.spawn_retry
         if self.begin_spawn and now >= self.begin_spawn:
-            if self.levels.shared_component is not None:     # sent in the same tick by a recorded client
-                w = Writer()
-                w.serialize_int(SHARED_COMPONENT_INDEX["ServerSelectDefaultSpawnPoint"], SHARED_COMPONENT_MAX_INDEX)
-                self.conn.send(actor=[(self.levels.shared_component, True) + w.payload()])
+            self.send_actor(SHARED_COMPONENT, "ServerSelectDefaultSpawnPoint")   # same tick in a recording
             self.send(("ServerBeginSpawnProcess",))
             self.begin_spawn = None
+        if self.pawn is not None and not self.armed and WEAPON in self.levels.channels:
+            weapon = self.levels.channels[WEAPON]
+            self.send_actor(INVENTORY, "ServerSetCurrentWeapon", weapon)
+            self.send_actor(WEAPON, "ServerSetCurrentFireMode", 0)
+            self.armed = True
+            if self.args.fire_interval:
+                self.next_fire = now + random.uniform(1.0, self.args.fire_interval)
+        if self.next_fire and now >= self.next_fire:
+            self.send_actor(WEAPON, "ServerStartFire", 0, now - self.joined + 1.0)
+            self.conn.stats["bursts"] = self.conn.stats.get("bursts", 0) + 1
+            self.stop_fire, self.next_fire = now + self.args.fire_burst, now + self.args.fire_interval
+        if self.stop_fire and now >= self.stop_fire:
+            self.send_actor(WEAPON, "ServerStopFire", 0)
+            self.stop_fire = None
         if now >= self.next_move:
             accel = (0, 0, 0)
             if self.pawn is not None:
@@ -388,6 +414,8 @@ def main():
     ap.add_argument("--spawn-delay", type=float, default=5, help="seconds after Join before the first spawn request")
     ap.add_argument("--spawn-retry", type=float, default=15, help="seconds between spawn requests until a pawn")
     ap.add_argument("--move-rate", type=float, default=30, help="ServerMove calls per second")
+    ap.add_argument("--fire-interval", type=float, default=0, help="seconds between bursts once armed (0: no firing)")
+    ap.add_argument("--fire-burst", type=float, default=1.5, help="seconds the trigger stays down per burst")
     args = ap.parse_args()
 
     replay = load_replay(args.replay, {int(c) for c in args.replay_channels.split(",")}) if args.replay else []

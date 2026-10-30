@@ -269,6 +269,16 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Ausprobiert
 
+- **Fake-Client feuert, Host schießt nicht (2026-10-30):** Ausrüsten klappt wie beim echten Client
+  (`ServerSetCurrentWeapon(<Waffenkanal>)` auf `DustPawnInventoryManager` Index 23/27, `ServerSetCurrentFireMode(0)` auf
+  `DustHandheldWeapon` 52/54, beide bitgleich zur Aufnahme): Host-`Pawn.Weapon` (+0x370) wird gesetzt. Danach
+  `ServerStartFire(FireModeNum 0, TimeStamp)` (26/54) und `ServerStopFire(0)` (27/54) in Stößen: `Pawn.FlashCount` (+0x213)
+  bleibt 0, `InventoryManager.PendingFire` (+0x1e8) bleibt [0, 0], Waffe Clip 4 / geladen 4 (`mAmmoInClip0` +0x848,
+  `mAmmoLoaded0` +0x84c), `Pawn.bNoWeaponFiring` (+0x20c, Maske 0x00400000) aus. `Weapon.ServerStartFire` → `BeginFire` →
+  `DustWeapon.BeginFire` (HasAmmo nativ, HasCap) → `SetPendingFire` wird also nicht erreicht. Der echte Client ruft vorher
+  `SyncFireIDToServer` (→ `ServerSetFireID`, 53/54) auf. Nötig: Mitschnitt eines echten Clients beim Schießen.
+  Werkzeuge: `pawn_list.py` zeigt jetzt Weapon und FlashCount; `fake_client.py --fire-interval/--fire-burst`.
+
 - **`Frame limit: 30` am Null-Client (2026-10-30, `D:\rpcs3_e`, Backup `*.before_frame30`):** Unbrauchbar. Login extrem langsam
   (~25 s zwischen CREST-Anfragen, nach 10 min erst bei `/accounts/`), danach Stillstand ohne tickende Welt. V-Drücke während
   des Logins könnten mitgewirkt haben, wahrscheinlich ist aber das gleiche Flip-Schlafen wie bei `Auto`. Zurück auf

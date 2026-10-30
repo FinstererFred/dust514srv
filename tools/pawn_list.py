@@ -5,7 +5,8 @@ headless test clients can be checked without a picture. With --watch it repeats 
     python tools/pawn_list.py --watch 2 --seconds 30
 
 Offsets (host and client dumps 2026-10-27): WorldInfo.PawnList +0x4f8, Pawn.Controller +0x1f4, Pawn.NextPawn +0x1f8,
-Actor.Location +0x54 (X, Y, Z as floats; the LOD caves read X/Y for the horizontal distance).
+Actor.Location +0x54 (X, Y, Z as floats; the LOD caves read X/Y for the horizontal distance). Firing (uprops.py on the
+2026-10-30 dump): Pawn.FlashCount (byte, counts shots, replicated) +0x213, Pawn.Weapon +0x370.
 """
 import argparse
 import math
@@ -17,6 +18,7 @@ import psutil
 from host_tick import GUEST_BASE, Guest, find_worldinfo
 
 OFF_PAWNLIST, OFF_CONTROLLER, OFF_NEXTPAWN, OFF_LOCATION = 0x4F8, 0x1F4, 0x1F8, 0x54
+OFF_FLASHCOUNT, OFF_WEAPON = 0x213, 0x370
 
 
 def u32(g, addr):
@@ -27,7 +29,8 @@ def pawns(g, wi):
     result, p = [], u32(g, wi + OFF_PAWNLIST)
     while p and len(result) < 256:
         loc = struct.unpack(">3f", g.read(p + OFF_LOCATION, 12))
-        result.append((p, u32(g, p), u32(g, p + OFF_CONTROLLER), loc))
+        result.append((p, u32(g, p), u32(g, p + OFF_CONTROLLER), loc, g.read(p + OFF_FLASHCOUNT, 1)[0],
+                       u32(g, p + OFF_WEAPON)))
         p = u32(g, p + OFF_NEXTPAWN)
     return result
 
@@ -47,9 +50,10 @@ def main():
     last, end = {}, time.time() + args.seconds
     while True:
         print(time.strftime("%H:%M:%S"))
-        for p, vtable, ctrl, loc in pawns(g, wi):
+        for p, vtable, ctrl, loc, flash, weapon in pawns(g, wi):
             moved = math.dist(loc, last[p]) if p in last else 0.0
-            print("  pawn %#x vtable %#x controller %#x  loc %9.1f %9.1f %9.1f  moved %7.1f" % (p, vtable, ctrl, *loc, moved))
+            print("  pawn %#x vtable %#x controller %#x  loc %9.1f %9.1f %9.1f  moved %7.1f  weapon %#x flash %3d"
+                  % (p, vtable, ctrl, *loc, moved, weapon, flash))
             last[p] = loc
         if not args.watch or time.time() + args.watch > end:
             break

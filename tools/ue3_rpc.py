@@ -26,6 +26,17 @@ INDEX = {"ServerMove": 54, "ServerUpdatePing": 62, "ServerAcknowledgePossession"
 # CheckSpawnPointIsValid cancels the spawn (ClientNotifySpawnPointCancelled).
 SHARED_COMPONENT_MAX_INDEX = 38
 SHARED_COMPONENT_INDEX = {"ServerSelectDefaultSpawnPoint": 26, "ServerSetCurrentSpawnPoint": 27}
+# Server RPCs on other actor channels: archetype -> (net field count, {function: (index, parameter types)}).
+# A recorded client equipped its rifle after GivePawn with ServerSetCurrentWeapon(<weapon channel>) on the inventory
+# manager and ServerSetCurrentFireMode(0) on the weapon; firing is stock UE3 Weapon.ServerStartFire/ServerStopFire
+# (CCP added TimeStamp), not seen in a recording yet.
+ACTOR_RPCS = {
+    "DustGame.Default__DustControllerSharedComponent": (38, {"ServerSelectDefaultSpawnPoint": (26, [])}),
+    "DustGame.Default__DustPawnInventoryManager": (27, {"ServerSetCurrentWeapon": (23, ["object"])}),
+    "DustGame.Default__DustHandheldWeapon": (54, {"ServerStartFire": (26, ["byte", "float"]),
+                                                  "ServerStopFire": (27, ["byte"]),
+                                                  "ServerSetCurrentFireMode": (52, ["int"])}),
+}
 # Parameter types in declaration order. "object" is an actor reference; on the wire a big-endian int32 that matched the
 # actor's channel index (GivePawn/ServerAcknowledgePossession, 2026-10-30), echoed back unchanged.
 SCHEMA = {"ServerMove": ["float", "vector", "vector", "byte", "byte", "int"], "ServerUpdatePing": ["int"],
@@ -110,9 +121,18 @@ class Writer:
         self.int_(number)
 
     def rpc(self, name, *values):
-        """Appends one RPC; several RPCs can share a bunch."""
-        self.serialize_int(INDEX[name], MAX_INDEX)
-        for kind, value in zip(SCHEMA[name], values):
+        """Appends one PlayerController RPC; several RPCs can share a bunch."""
+        return self.call(INDEX[name], MAX_INDEX, SCHEMA[name], values)
+
+    def actor_rpc(self, archetype, name, *values):
+        """Appends one RPC of another actor (ACTOR_RPCS)."""
+        maximum, functions = ACTOR_RPCS[archetype]
+        index, schema = functions[name]
+        return self.call(index, maximum, schema, values)
+
+    def call(self, index, maximum, schema, values):
+        self.serialize_int(index, maximum)
+        for kind, value in zip(schema, values):
             if kind == "bool":
                 self.bit(value)
                 continue
