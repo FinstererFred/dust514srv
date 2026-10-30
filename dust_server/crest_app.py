@@ -17,6 +17,7 @@ import uuid
 import urllib.parse
 from pathlib import Path
 
+import characters
 import content
 import np_ticket
 import offline_bridge
@@ -37,11 +38,8 @@ REFRESH_TOKEN = "dust-local-refresh-token"
 # that token (or none) is answered the old way.
 CHAR_STORE = os.environ.get("DUST_CHAR_STORE") == "1"
 HOST_ACCOUNTS = {a.strip() for a in os.environ.get("DUST_HOST_ACCOUNTS", "DustHost").split(",") if a.strip()}
-STARTER = {  # stage 1a: every account gets an Amarr Enforcer until characters can be created (stage 3)
-    "bloodline_id": 5, "race_id": 4, "specialty_id": 353915, "corporation_id": 1000205,
-    "portrait_id": 2,  # myCharactersClient.GetPortraitIDByRace: Caldari 0, Gallente 1, Amarr 2, Minmatar 3
-    "gender": 1, "npe_state": 1,  # as CCP's offline character 1
-}
+NEW_CHARACTER_NPE_STATE = 1  # as CCP's offline character 1; 0 would start the new player experience (untested)
+DELETE_WAIT = float(os.environ.get("DUST_DELETE_WAIT", "60"))  # seconds between "terminate" and the actual delete
 
 # Document keys from dust/documentsClient.py. CDN documents are plain text files the client
 # downloads through its HTTP cache; the EULA must not be empty or the client disconnects.
@@ -142,6 +140,13 @@ def dust_root(req):
         "devices": {"href": f"{req['base']}/devices/"},
         "keepAlive": {"href": f"{req['base']}/keepalive/"},
     })
+    if CHAR_STORE:
+        # Character creation (characterCreation2 via userClient._GetStaticData) reads exactly these names.
+        root.update({
+            "bloodlines": {"href": f"{req['base']}/bloodlines/"},
+            "dustSpecialties": {"href": f"{req['base']}/specialties/"},
+            "dustPortraits": {"href": f"{req['base']}/portraits/mercenary/"},
+        })
     return root
 
 
@@ -171,20 +176,9 @@ def oauth_token(req):
         return token_answer()
     if online_id in HOST_ACCOUNTS:
         return token_answer()
+    # A new account starts with three empty slots in the selection (stage 3; until then it got an Amarr Enforcer).
     user = store.get().user_for_online_id(online_id)
-    if not store.get().characters_of(user["id"]):
-        create_starter_character(user)
     return token_answer(*store.get().issue_token(user["id"]))
-
-
-def create_starter_character(user):
-    specialty = next(s for s in content.specialties() if s["id"] == STARTER["specialty_id"])
-    name = user["online_id"]
-    while store.get().name_taken(name):
-        name += "_"
-    return store.get().create_character(
-        user["id"], name, STARTER["gender"], STARTER["bloodline_id"], STARTER["race_id"], specialty,
-        STARTER["portrait_id"], STARTER["corporation_id"], npe_state=STARTER["npe_state"])
 
 
 def bearer_token(req):
@@ -310,7 +304,14 @@ def mercenary_entry(req, char):
         "passiveSkillGain": {"status": char["passive_sp"], "self": link(
             req, f"/users/{char['user_id']}/mercenaries/passiveskillgain/{char['id']}/")},
         "favoriteFitting": None,
+        "deletePrepareDate": characters.delete_prepare_date(char["delete_ready_at"]),
     }
+
+
+def forbidden(problem):
+    """A 403 the client shows as a popup (dust.popups.HttpForbiddenErrorConfig); problem = (title, message)."""
+    title, message = problem
+    return RawResponse(json.dumps({"title": title, "message": message}).encode(), "application/json", status=403)
 
 
 def path_ids(req, pattern):
@@ -348,6 +349,89 @@ def passive_skill_gain(req):
     store.get().set_passive(char["id"], 1 if status else 0)
     for other in store.get().characters_of(char["user_id"]):  # the account's other characters may have switched off
         notify_skill_points(other["id"])
+    return {}
+
+
+# --- Stage 3: character creation and deletion (rules in characters.py) -------------------------------------------
+
+@route("GET", r"^/bloodlines/$")
+def bloodlines(req):
+    # BloodlineCollection-v2; characterCreation2 matches race.href against the hrefs of GET /races/ (CCP's offline).
+    if not CHAR_STORE:
+        return OFFLINE
+    return collection([
+        {"id": bid, "href": f"{req['base']}/bloodlines/{bid}/", "name": name, "description": text,
+         "icon": {"href": f"icon_bloodline_{name.lower()}"}, "race": link(req, f"/races/{race}/", id=race)}
+        for bid, (name, race, text) in characters.BLOODLINES.items()])
+
+
+@route("GET", r"^/specialties/$")
+def specialties(req):
+    # SpecialtyCollection-v2; one Enforcer per race in CATMA (the client only shows the icon from icon.href).
+    if not CHAR_STORE:
+        return OFFLINE
+    return collection([
+        {"id": s["id"], "href": f"{req['base']}/specialties/{s['id']}/", "name": "Enforcer",
+         "description": f"{characters.RACE_NAMES.get(s['race'], '')} Enforcer.",
+         "icon": {"href": "icon_speciality_enforcer"}, "race": link(req, f"/races/{s['race']}/", id=s["race"])}
+        for s in content.specialties()])
+
+
+@route("GET", r"^/portraits/mercenary/$")
+def portraits(req):
+    # PortraitCollection-v1; characterCreation2.AutoSelectPortraitDataByRace picks image.id by race and image.gender.
+    if not CHAR_STORE:
+        return OFFLINE
+    return collection([
+        {"href": f"{req['base']}/portraits/mercenary/{bool(gender)}/{pid}/", "image": {"id": pid, "gender": gender}}
+        for gender in (0, 1) for pid in range(4)])
+
+
+@route("POST", r"^/users/(\d+)/mercenaries/$")
+def create_mercenary(req):
+    user = current_user(req)
+    if not user:
+        return OFFLINE
+    if path_ids(req, r"^/users/(\d+)/mercenaries/$")[0] != user["id"]:
+        raise CharacterMissing(None)
+    body = req["body"] if isinstance(req["body"], dict) else {}
+    name = characters.clean_name(body.get("name"))
+    bloodline_id = id_from_href(body.get("bloodline"))
+    problem = characters.check_new(name, bloodline_id, len(store.get().characters_of(user["id"])),
+                                   store.get().name_taken)
+    if problem:
+        print(f"characters: {user['online_id']} create {name!r} rejected: {problem[0]}", flush=True)
+        return forbidden(problem)
+    race = characters.race_of(bloodline_id)
+    specialty = next(s for s in content.specialties() if s["race"] == race)
+    char = store.get().create_character(
+        user["id"], name, 1 if body.get("gender") else 0, bloodline_id, race, specialty,
+        characters.PORTRAIT_BY_RACE[race], characters.NPC_CORPORATIONS[race][0], npe_state=NEW_CHARACTER_NPE_STATE)
+    print(f"characters: {user['online_id']} created {char['id']} {name!r} bloodline {bloodline_id}", flush=True)
+    return {}
+
+
+@route("POST", r"^/users/(\d+)/mercenaries/(\d+)/$")
+def prepare_delete_mercenary(req):
+    # MercenaryItemUpdate-v1 {prepareDelete: true} starts the countdown ("terminate"), false cancels it.
+    char = own_character(req, path_ids(req, r"^/users/(\d+)/mercenaries/(\d+)/$")[1], private=True)
+    if not char:
+        return OFFLINE
+    prepare = (req["body"] if isinstance(req["body"], dict) else {}).get("prepareDelete")
+    store.get().update_character(char["id"], delete_ready_at=time.time() + DELETE_WAIT if prepare else None)
+    print(f"characters: {char['id']} {'prepare delete' if prepare else 'cancel delete'}", flush=True)
+    return {}
+
+
+@route("DELETE", r"^/users/(\d+)/mercenaries/(\d+)/$")
+def delete_mercenary(req):
+    char = own_character(req, path_ids(req, r"^/users/(\d+)/mercenaries/(\d+)/$")[1], private=True)
+    if not char:
+        return OFFLINE
+    if not characters.may_delete(char["delete_ready_at"], time.time()):
+        return forbidden(characters.DELETE_NOT_READY)
+    store.get().update_character(char["id"], deleted=1)  # soft delete: the row and its skills stay
+    print(f"characters: {char['id']} {char['name']!r} deleted", flush=True)
     return {}
 
 
@@ -668,6 +752,10 @@ def corporation(req):
     # CCP's offline data has plain URL strings per logo size; the client reads logo[size]['href']
     # (corporationClient.GetLogoImage). Images are only used when already cached, else a default icon.
     corp_id = re.match(r"^/corporations/(\d+)/$", req["path"]).group(1)
+    if CHAR_STORE and int(corp_id) in characters.NPC_CORPORATION_NAMES and int(corp_id) != corp["id"]:
+        # CCP's offline handler answers every ID with Amarr Templars; keep its document, but with this corporation.
+        corp = json.loads(re.sub(rf"\b{corp['id']}\b", corp_id, json.dumps(corp)))
+        corp["name"] = characters.NPC_CORPORATION_NAMES[int(corp_id)]
     logo = corp.get("logo") or {}
     for size in ("32x32", "64x64", "128x128", "256x256"):
         logo[size] = {"href": f"{req['base']}/images/corporations/{corp_id}_{size.split('x')[0]}.png"}
@@ -884,6 +972,8 @@ def corporation_link(req, corp_id):
         name = offline_result(f"/corporations/{corp_id}/").get("name")
     except Exception:
         name = None
+    if CHAR_STORE:  # CCP's offline handler answers every ID with Amarr Templars
+        name = characters.NPC_CORPORATION_NAMES.get(corp_id, name)
     return {"id": corp_id, "name": name or f"Corporation {corp_id}", "href": f"{req['base']}/corporations/{corp_id}/"}
 
 

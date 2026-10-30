@@ -232,6 +232,12 @@ Ziel: Leere Plätze in der Auswahl funktionieren, bis zu drei Charaktere pro Kon
 6. **Ersten Login testen:** Ein Konto ohne Charakter landet direkt in der Auswahl mit drei leeren Plätzen; prüfen,
    dass Root-Daten ohne `character`-Link den Client nicht stören.
 
+**Umsetzung (2026-10-30):** Regeln in `dust_server/characters.py`, Handler in `crest_app.py`. Abweichungen: 10 statt 12
+Blutlinien (Ni-Kunni und Jin-Mei haben im Client kein Icon). Fehler (Name vergeben/ungültig, kein freier Platz, Löschen zu
+früh) gehen als 403 mit `title`/`message` zurück, das zeigt der Client als Popup. Wartezeit per `DUST_DELETE_WAIT` (Sekunden,
+Standard 60). Kein automatischer Startcharakter mehr. NPC-Corp je Rasse, Minmatar vorerst Amarr Templars (offene Frage 3).
+`npeState` neuer Charaktere 1 wie CCPs Offline-Charakter, sonst würde vermutlich das Tutorial starten.
+
 **Prüfen:** Leeren Platz wählen → Geschlecht, Rasse, Blutlinie, Spezialisierung → Name → Charakter erscheint mit
 richtigen Icons, Start-Skills und ISK; Löschen und Abbrechen des Löschens; vierter Charakter nicht möglich.
 

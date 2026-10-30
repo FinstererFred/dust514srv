@@ -386,6 +386,16 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     Passiver Zuwachs bestätigt: Aktivieren in der Auswahl → `PUT …/passiveskillgain/{id}/ {status: 1}`, „ACTIVE“. Danach steigt die SP-Anzeige
     1 SP pro 3,6 s (24 000/Tag), Client und Server liegen nach einigen Minuten gleich.
     Noch offen: Respec (`PUT` auf den `respec`-Link, vom Server noch nicht behandelt), `IndexError` Dropsuit-Progression.
+- **Stufe 3 (2026-10-30), hinter dem Schalter:** Erstellen und Löschen von Charakteren. Funde aus dem Client-Code:
+  - Erstellen schickt nur `{name: "<Vorname> <Nachname>", gender, bloodline: href}`. Rasse, Spezialisierung und Porträt folgen aus der
+    Blutlinie. Die Root-Links heißen `bloodlines`, `dustSpecialties`, `dustPortraits`. Der Client vergleicht `race.href` der Blutlinien
+    mit den Hrefs aus `GET /races/` (CCPs Offline-Daten).
+  - 403 mit `{title, message}` zeigt der Client als Popup und springt zurück zur Namenseingabe. Bei 200 geht es zur Auswahl.
+  - Löschen: `POST <self> {prepareDelete: true|false}`, die Liste zeigt `deletePrepareDate` (UTC), danach `DELETE <self>`.
+  - CCPs Offline-Handler liefert für jede Corp-ID „Amarr Templars“. Mit Schalter setzen wir für 1000214 „Seituoda Taskforce Command“
+    und für 1000216 „Crux Special Tasks Group“ ein (Namen aus den Offline-Charakteren 2 und 3).
+  - Im Prozess geprüft (Wegwerf-DB): Stammdaten, Erstellen, Ablehnungen (Name doppelt/zu kurz, vierter Charakter, Löschen zu früh),
+    Countdown, Abbrechen, Löschen, Name danach wieder frei. Parität ohne Schalter unverändert. In RPCS3 noch offen.
 
 ## Hypothesen
 
