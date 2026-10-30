@@ -28,6 +28,24 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **PPU-Profil des Game-Threads, 16 feuernde Fake-Clients gegen 0 (2026-10-30, `tools/ppu_profile.py`):** RPCS3-Option
+  `PPU Profiler: true`, je Lauf Boot + ~160 s Gefecht, mit Clients davon ~130 s mit 16 feuernden Clients; Host über
+  `CloseMainWindow` beendet (nur dann schreibt RPCS3 das Profil). Rohdaten in `research/profiles/prof_{0,16}.log`.
+  main_thread: 112 450 → 161 977 Samples mit Gastcode (+49 527 ≈ 37 s von ~130 s), „idle“ (Wartezeit in Syscalls)
+  64,5 % → 47,4 %. Größte Zuwächse (Anteil am Zuwachs der gelisteten Funktionen; das Profil listet nur die Spitze):
+  - 18 % `0x5ea700` und verwandte `0x5ea664` (+1,3 %): nach Struktur `UNetConnection::ClientHasInitializedLevelFor`
+    bzw. die Variante im PackageMap: läuft die Outer-Kette zum Level hoch und sucht dessen FName **linear** in
+    `ClientVisibleLevelNames` (TArray<FName> bei Connection+0x5060/+0x5064; Persistent-Level-Name bei +0x5058). Pro
+    Actor und Verbindung, bei ~168 gemeldeten Levels pro Client. Kandidat für einen Code-Höhlen-Patch (z. B. Treffer nach
+    vorn tauschen; die Reihenfolge der Liste ist bedeutungslos).
+  - 7 % `0x823498`: Gitter-/Octree-Abfrage (Koordinaten werden geshiftet, `0x82c154` prüft Boxen), vermutlich
+    Kollisions-Hash oder Relevanz-Octree.
+  - 4 % `0x11481f0` memmove, 3,8 % `0x1198304` TMap/TSet-FindId mit Pointer-Hash (z. B. Actor → Kanal),
+    2,5 % `0x1197cd8`, 5,7 % `0x2b4768`, `0x2d5a5c`, `0x2d55a0` (noch nicht zugeordnet).
+  Offen: Die Frame-Zeit steigt von 11,4 auf 25,4 ms (+14 ms ≈ +120 %), der Gastcode-Anteil aber nur um ~28 % der
+  Wandzeit. Ein großer Teil der Mehrkosten pro Spieler steckt also vermutlich in Syscalls/HLE (Kandidat sys_net:
+  ~16 × 2 × 60 Pakete/s), die der Profiler als „idle“ zählt. Nächster Schritt: Syscalls zählen (RPCS3-Loglevel für
+  sys_net) oder den Host-Thread auf Windows-Ebene sampeln.
 - **Heap im emulierten Speicher bei 16 und 32 Spielern (2026-10-30, `tools/vm_footprint.py`):** UE3 legt seinen Heap in einen
   `sys_vm`-Bereich (`sys_vm_memory_map vsize=0x10000000 psize=0x9200000` ab 0x40000000, also 256 MB virtuell, 146 MB physisch).
   RPCS3 hinterlegt die ganzen 256 MB, deshalb zeigen Prozess-RAM und Dumps nichts. Der Allokator meldet aber jede 64K-Seite
