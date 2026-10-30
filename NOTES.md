@@ -489,6 +489,11 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Module, vermutlich Standardmodule). Spiel verlassen → `_MemberLeftBattle` → `POST /dev/battle/members/2100001612/completed/`
   (Dauer 158 s) → Server bucht 0 SP/0 ISK und zieht 367456 ×1 ab, Zeile in `battle_members` mit `completed_at`.
   Migration 3 lief (`dust.sqlite.bak-2`). Offen: Matchende mit Ergebnisbildschirm (braucht ein zu Ende gespieltes Match).
+  **Matchende per `SetWinner 1 0` (Dev-Controller → `DustTeamGame.SetWinner`):** Der Listen-Host ruft
+  `OnBattleServerStoppedFromUnreal (1, 2, 2)` auf (Sieger, Klonverluste Angreifer/Verteidiger) und öffnet `matchResult`.
+  Zweiter falscher Import (`from svcmgr import GetUnrealService`) → unbehandelte Ausnahme, Host vom Netz getrennt. Fix:
+  `svcmgr` aus dem Modul von `battleServer`, Matchende komplett in try/except, Abgänge aus der Mitgliederliste nehmen.
+  Der zweite Beitritt von 2100100003 (Credential ungebucht) verlor dadurch nichts.
 
 ## Hypothesen
 

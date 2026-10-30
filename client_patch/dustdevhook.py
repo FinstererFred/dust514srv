@@ -170,7 +170,8 @@ def _Lost(charID):
 
 
 def _ListenCompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesLost):
-    from svcmgr import GetUnrealService
+    # dust.battleServer's own svcmgr: CCP's modules import it implicitly relative, there is no top-level "svcmgr".
+    GetUnrealService = sys.modules[type(self).__module__].svcmgr.GetUnrealService
     _state['completed'] = True
     warpoints = {}
     try:
@@ -226,6 +227,7 @@ def _ListenMemberLeft(self, characterURI, reason):
             body, content='vnd.ccp.eve.Api-v3')
     except Exception:
         log.exception('posting the member result failed')
+    del _state['byURI'][characterURI]  # booked; a rejoin registers the player again
 
 
 def _PatchBattleServer(module):
@@ -241,7 +243,11 @@ def _PatchBattleServer(module):
         if _state['completed']:
             log.info('battle already completed, ignored')
             return
-        _ListenCompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesLost)
+        try:
+            _ListenCompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesLost)
+        except Exception:
+            # Uncaught here, the host's game disconnects from the network (UNCAUGHT_TOP_LEVEL_EXCEPTION).
+            log.exception('completing the battle failed')
 
     def _MemberLeftBattle(self, characterURI, reason=None):
         if self.battle is None and _state['battleServer'] and not _state['completed']:
