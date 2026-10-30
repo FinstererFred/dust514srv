@@ -21,6 +21,7 @@ import content
 import np_ticket
 import offline_bridge
 import server_status
+import skills
 import store
 
 RESPONSES_DIR = Path(__file__).resolve().parent / "responses"
@@ -444,6 +445,8 @@ def mercenary(req):
     if char:
         merc = character_template(req["path"], char)
         merc["portrait"] = portrait_link(req, char)
+        # battleServer._MemberJoinedBattle loads a member's skills from here (stage 4, a real battle server)
+        merc["battleSkills"] = merc["skills"]
     else:
         merc = offline_result(req["path"])
     # 03.19 reads mercenaryPublicData['dustAgents'] (dustAgentClient.py); CCP's offline data predates it.
@@ -476,6 +479,64 @@ def boosters(req):
     known = {k.get("kind") for k in kinds}
     kinds.extend({"kind": kind, "stackLimit": 3, "multipliers": 1} for kind in range(10) if kind not in known)
     return data
+
+
+def skill_href(req, char_id, type_id):
+    return f"{req['base']}/characters/{char_id}/mercenary/skills/{type_id}/"
+
+
+@route("GET", r"^/characters/(\d+)/mercenary/skills/$")
+def character_skills(req):
+    # DustCharacterSkillCollection (skillClient._LoadKnownSkills); all on one page, no "next".
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/mercenary/skills/$")[0], private=True)
+    if not char:
+        return OFFLINE
+    return collection([{"skillTypeID": type_id, "skillLevel": level, "skillName": "",
+                        "href": skill_href(req, char["id"], type_id)}
+                       for type_id, level in store.get().skills_of(char["id"]).items()])
+
+
+def skill_rejected(char, action, code):
+    # The client checks first and runs these calls without error handling: an HTTP error would be an uncaught
+    # exception (= disconnect). So answer 200 and log; the client reloads the skills right after and sees the truth.
+    print(f"skills: {action} for character {char['id']} rejected: {skills.ERROR_TEXT.get(code, code)}", flush=True)
+    return {}
+
+
+@route("POST", r"^/characters/(\d+)/mercenary/skills/$")
+def read_skill_book(req):
+    # skillClient.UseSkillbook: {"skillTypeID"}; the skill becomes known at level 0. Skill books are not taken
+    # from the inventory yet (CCP's offline inventory has 999 of everything, stage 5).
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/mercenary/skills/$")[0], private=True)
+    if not char:
+        return OFFLINE
+    type_id = int((req["body"] if isinstance(req["body"], dict) else {}).get("skillTypeID") or 0)
+    rules, db = content.skill_rules(), store.get()
+    with db.transaction():
+        code = rules.check_book(db.skills_of(char["id"]), type_id)
+        if code:
+            return skill_rejected(char, f"book {type_id}", code)
+        db.set_skill(char["id"], type_id, 0)
+    return {}
+
+
+@route("PUT", r"^/characters/(\d+)/mercenary/skills/(\d+)/$")
+def upgrade_skill(req):
+    # skillClient.UpgradeSkill: {"skillTypeID", "currentLevel", "aimLevel"}; costs SP (free SP = total - spent).
+    char_id, type_id = path_ids(req, r"^/characters/(\d+)/mercenary/skills/(\d+)/$")
+    char = own_character(req, char_id, private=True)
+    if not char:
+        return OFFLINE
+    body = req["body"] if isinstance(req["body"], dict) else {}
+    current, aim = int(body.get("currentLevel", -1)), int(body.get("aimLevel", -1))
+    rules, db = content.skill_rules(), store.get()
+    with db.transaction():
+        char = db.character(char_id)
+        code = rules.check_upgrade(db.skills_of(char_id), store.total_sp(char), type_id, current, aim)
+        if code:
+            return skill_rejected(char, f"upgrade {type_id} {current}->{aim}", code)
+        db.set_skill(char_id, type_id, aim)
+    return {}
 
 
 @route("GET", r"^/characters/(\d+)/mercenary/private/$")

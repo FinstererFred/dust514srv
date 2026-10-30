@@ -5,6 +5,7 @@
 #   -> {"found": true, "result": ...} | {"found": true, "error": "<traceback>"} | {"found": false}
 #   GET /catalog  market groups and items with names and base prices (catalog.py)
 #   GET /specialties  starting values per character specialty (specialties.py)
+#   GET /skills  skills with cost multiplier and prerequisites, the cost table (skilldata.py)
 import BaseHTTPServer
 import SocketServer
 import json
@@ -53,12 +54,13 @@ def dispatch(method, path, parameters=None, data=None):
         return {'found': True, 'error': traceback.format_exc()}
 
 
+BUILDERS = {'/catalog': 'catalog', '/specialties': 'specialties', '/skills': 'skilldata'}
 _built = {}  # path -> JSON, built on first request, the CATMA DB does not change while the service runs
 
 
 def built(path):
     if path not in _built:
-        module = __import__({'/catalog': 'catalog', '/specialties': 'specialties'}[path])
+        module = __import__(BUILDERS[path])
         with _lock:
             _built[path] = json.dumps(module.Build())
     return _built[path]
@@ -67,7 +69,7 @@ def built(path):
 class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def do_GET(self):
-        if self.path not in ('/catalog', '/specialties'):
+        if self.path not in BUILDERS:
             self.send_error(404)
             return
         body = built(self.path)

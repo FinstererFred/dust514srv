@@ -162,6 +162,7 @@ async function updateBanner() {
 const PAGES = {
   status: pageStatus, host: pageHost, documents: pageDocuments, market: (el) => pageMarket(el, "isk"),
   aur: (el) => pageMarket(el, "aur"), storefront: pageStorefront, loyalty: pageLoyalty, rewards: pageRewards, wallet: pageWallet,
+  characters: pageCharacters,
 };
 
 async function route() {
@@ -739,6 +740,38 @@ async function pageWallet(el) {
         field("Aurum (AUR)", numberInput(cfg.aur, (v) => { cfg.aur = v || 0; }))),
       h("p", { class: "muted", text: "Loyalty points are set per faction under Loyalty stores. Purchases are not stored yet, so buying does not change the balance." }),
       h("div", { class: "actions" }, h("button", { class: "primary", text: "Save", onclick: (e) => run(e.target, async () => { await api("/api/content/wallet", cfg); toast("Wallet saved – applies at the next login"); }) }))));
+}
+
+// --- characters (store.py, DUST_CHAR_STORE=1) -----------------------------------------------------
+
+async function pageCharacters(el) {
+  const data = await api("/api/characters");
+  const intro = head("Characters", "Accounts (RPCN online ID) and their characters. Total SP include passive gain; free SP = total minus the cost of all known skills.");
+  if (!data.enabled) {
+    el.replaceChildren(intro, h("div", { class: "card" }, h("p", { class: "muted", text: "Own characters are off: start the server with DUST_CHAR_STORE=1. Until then every player uses CCP's offline characters." })));
+    return;
+  }
+  const save = (button, id, body, message) => run(button, async () => { await api(`/api/characters/${id}`, body); toast(message); await pageCharacters(el); });
+  const row = (c) => {
+    const edit = { sp: c.sp, isk: c.isk };
+    return h("tr", {},
+      h("td", { text: `${c.name} (${c.id})` }),
+      h("td", {}, numberInput(c.sp, (v) => { edit.sp = v || 0; })),
+      h("td", { text: fmt(c.free_sp) }),
+      h("td", { text: c.passive ? `${fmt(c.sp_per_day)} / day` : "off" }),
+      h("td", {}, numberInput(c.isk, (v) => { edit.isk = v || 0; })),
+      h("td", { text: fmt(c.skills) }),
+      h("td", {},
+        h("button", { class: "primary", text: "Save", onclick: (e) => save(e.target, c.id, edit, `${c.name} saved`) }), " ",
+        h("button", { class: "danger", text: "Reset skills", title: "Back to the specialty's starting skills", onclick: (e) => {
+          if (confirm(`Reset all skills of ${c.name} to the starting skills?`)) save(e.target, c.id, { reset_skills: true }, `Skills of ${c.name} reset`);
+        } })));
+  };
+  el.replaceChildren(intro, ...(data.users.length ? data.users.map((u) => h("div", { class: "card" },
+    h("h3", { text: `${u.online_id} (user ${u.id})` }),
+    u.characters.length ? h("table", {},
+      h("tr", {}, ["Character", "Total SP", "Free SP", "Passive gain", "ISK", "Skills", ""].map((t) => h("th", { text: t }))),
+      u.characters.map(row)) : h("p", { class: "muted", text: "No characters." }))) : [h("div", { class: "card" }, h("p", { class: "muted", text: "No accounts yet – they are created at the first login." }))]));
 }
 
 // --- start ----------------------------------------------------------------------------------------

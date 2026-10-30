@@ -35,6 +35,12 @@ def catalog():
         return json.loads(response.read())
 
 
+def skills():
+    """Skills with cost multiplier, prerequisites and the cost table (catma_service/skilldata.py)."""
+    with urllib.request.urlopen(f"{SERVICE_BASE}/skills", timeout=60) as response:
+        return json.loads(response.read())
+
+
 def specialties():
     """Starting values per character specialty from the client's CATMA database (catma_service/specialties.py)."""
     with urllib.request.urlopen(f"{SERVICE_BASE}/specialties", timeout=60) as response:

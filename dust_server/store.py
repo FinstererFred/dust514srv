@@ -181,9 +181,27 @@ class Store:
         self.db.execute("UPDATE characters SET sp_base = ?, sp_since = ? WHERE id = ?",
                         (total_sp(char, now), now, char["id"]))
 
+    def set_total_sp(self, char_id, total, now=None):
+        """Set the total SP as of now (web admin); passive gain continues from there."""
+        now = time.time() if now is None else now
+        with self.transaction():
+            self.db.execute("UPDATE characters SET sp_base = ?, sp_since = ? WHERE id = ?", (total, now, char_id))
+        return self.character(char_id)
+
     def skills_of(self, char_id):
         return {r["type_id"]: r["level"] for r in self._all(
             "SELECT type_id, level FROM skills WHERE character_id = ? ORDER BY type_id", (char_id,))}
+
+    def set_skill(self, char_id, type_id, level):
+        with self.transaction():
+            self.db.execute("INSERT OR REPLACE INTO skills VALUES (?, ?, ?)", (char_id, type_id, level))
+
+    def replace_skills(self, char_id, skills):
+        """Replace all skills of a character with {typeID: level} (web admin: back to the starting skills)."""
+        with self.transaction():
+            self.db.execute("DELETE FROM skills WHERE character_id = ?", (char_id,))
+            self.db.executemany("INSERT INTO skills VALUES (?, ?, ?)",
+                                [(char_id, t, level) for t, level in skills.items()])
 
     def _max_id(self, table):
         return self._one(f"SELECT COALESCE(MAX(id), 0) AS id FROM {table}")["id"]

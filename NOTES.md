@@ -163,6 +163,21 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   (Log-Quelle `ccp_offline:rebind`). Nur der Besitzer bekommt sie, sonst 404. ISK unter `/accounts/{id}/` kommt aus
   `characters.isk`, AUR und LP bleiben global. Wieder im Prozess geprüft: ohne Schalter identisch zum Stand vor 1a (24
   Anfragen), mit Schalter keine Offline-IDs mehr in den Antworten eigener Charaktere.
+- **Stufe 2 (2026-10-30), hinter dem Schalter:** Echte Skills pro Charakter. Funde aus dem Client-Code:
+  - Einen Skill freischalten heißt **Skillbuch lesen**: `POST …/skills/ {skillTypeID}` macht ihn mit **Stufe 0** bekannt
+    (kostet keine SP, `IsSkillNeedReadBook` = Stufe `None`). Erst `PUT …/skills/{id}/ {currentLevel, aimLevel}` kostet SP. Der
+    Plan nahm Stufe 1 beim Kauf an, das war falsch. Das Buch selbst ist ein Inventar-Item (gleiche typeID) und kostet ISK im
+    Markt (`basePrice`, z. B. 149 000). Abgezogen wird es noch nicht, weil CCPs Inventar 999 von allem hat (Stufe 5).
+  - Kostentabelle in `.pyo`: `[6220, 18650, 43530, 87060, 155460]` × `costMultiplier`. Der Decompiler zeigt fälschlich
+    `[19, 20, 21, 22, 23]`, also immer den echten Wert über py27 nachprüfen.
+  - Der Client fängt bei Skill-Aufrufen keine HTTP-Fehler ab (ein Fehler wäre eine ungefangene Ausnahme, also eine Trennung).
+    Abgelehnte Käufe beantworten wir daher mit 200 und einem Log-Eintrag `skills: … rejected: …`. Der Client lädt die Skills
+    danach ohnehin neu.
+  - Startcharakter: 136 830 SP stecken in den 8 Start-Skills, 363 170 sind frei.
+  - Admin-Seite „Characters“: Konten und Charaktere anzeigen, Gesamt-SP und ISK setzen, Skills auf den Startstand
+    zurücksetzen. Ohne Schalter wird die Datenbank nicht geöffnet.
+  - Geprüft im Prozess: ohne Schalter 26 Anfragen identisch (auch Skill-POST/PUT), mit Schalter Buch, Upgrade und die vier
+    Ablehnungsfälle. In RPCS3 noch offen: Zeigt der Skill-Bildschirm die freien SP richtig, und klappt Upgraden ohne Trennung?
 
 ## Hypothesen
 

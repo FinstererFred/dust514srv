@@ -31,6 +31,7 @@ import content
 import crest_app
 import offline_bridge
 import server_status
+import store
 
 BASE_DIR = Path(__file__).resolve().parent
 UI_DIR = BASE_DIR / "admin_ui"
@@ -545,6 +546,45 @@ def api_market_effective():
     return {"isk": content.isk_market(), "aur": content.aur_store()}
 
 
+def api_characters():
+    # Accounts and characters from store.py; without DUST_CHAR_STORE the database is not even opened.
+    if not crest_app.CHAR_STORE:
+        return {"enabled": False, "users": []}
+    try:
+        rules = content.skill_rules()
+    except Exception:
+        rules = None  # CATMA service without GET /skills (started before stage 2): no free SP
+    db = store.get()
+    users = []
+    for user in db.users():
+        chars = []
+        for char in db.characters_of(user["id"]):
+            known, total = db.skills_of(char["id"]), store.total_sp(char)
+            chars.append({"id": char["id"], "name": char["name"], "specialty": char["specialty_id"],
+                          "sp": total, "free_sp": rules.free_sp(total, known) if rules else None,
+                          "sp_per_day": char["sp_per_day"], "passive": bool(char["passive_sp"]), "isk": char["isk"],
+                          "skills": len(known)})
+        users.append({"id": user["id"], "online_id": user["online_id"], "characters": chars})
+    return {"enabled": True, "users": users}
+
+
+def api_character_save(body, char_id):
+    if not crest_app.CHAR_STORE:
+        raise AdminError(409, "DUST_CHAR_STORE is off")
+    db, char_id = store.get(), int(char_id)
+    char = db.character(char_id)
+    if not char:
+        raise AdminError(404, "unknown character")
+    if "sp" in body:
+        db.set_total_sp(char_id, max(0, _int(body["sp"])))
+    if "isk" in body:
+        db.update_character(char_id, isk=max(0, _int(body["isk"])))
+    if body.get("reset_skills"):
+        specialty = next(s for s in content.specialties() if s["id"] == char["specialty_id"])
+        db.replace_skills(char_id, {s["skillTypeID"]: s["skillLevel"] for s in specialty["startingSkills"]})
+    return {"ok": True}
+
+
 API = [
     ("GET", r"/api/status", status),
     ("GET", r"/api/host", api_host_get),
@@ -557,6 +597,8 @@ API = [
     ("GET", r"/api/catalog", api_catalog),
     ("POST", r"/api/catalog/reload", api_catalog_reload),
     ("GET", r"/api/market/effective", api_market_effective),
+    ("GET", r"/api/characters", api_characters),
+    ("POST", r"/api/characters/(\d+)", api_character_save),
     ("GET", r"/api/content/(\w+)", api_content_get),
     ("POST", r"/api/content/(\w+)", api_content_save),
 ]

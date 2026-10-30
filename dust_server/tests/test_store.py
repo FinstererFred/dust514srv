@@ -84,6 +84,16 @@ class StoreTest(unittest.TestCase):
         self.store.add_sp(b["id"], 100, now=1000 + DAY)
         self.assertEqual(store.total_sp(self.store.character(b["id"]), now=1000 + DAY), 512100)
 
+    def test_skills_and_sp(self):
+        char = self.char(self.store.user_for_online_id("x")["id"])
+        self.store.set_skill(char["id"], 353352, 3)
+        self.store.set_skill(char["id"], 1, 0)
+        self.assertEqual(self.store.skills_of(char["id"]), {1: 0, 353352: 3, 364519: 2})
+        self.store.replace_skills(char["id"], {353352: 1})
+        self.assertEqual(self.store.skills_of(char["id"]), {353352: 1})
+        self.store.set_total_sp(char["id"], 777, now=5000)
+        self.assertEqual(store.total_sp(self.store.character(char["id"]), now=6000), 777)
+
     def test_update_whitelist(self):
         char = self.char(self.store.user_for_online_id("x")["id"])
         self.assertEqual(self.store.update_character(char["id"], portrait_id=3, npe_state=2)["portrait_id"], 3)

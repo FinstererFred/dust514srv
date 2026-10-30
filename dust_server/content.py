@@ -100,6 +100,17 @@ def catalog():
     return _catalog[0]
 
 
+_skill_rules = []
+
+
+def skill_rules():
+    """skills.Rules over every skill from the CATMA database (costs, prerequisites)."""
+    if not _skill_rules:
+        import skills
+        _skill_rules.append(skills.Rules(offline_bridge.skills()))
+    return _skill_rules[0]
+
+
 _specialties = []
 
 

@@ -1,7 +1,8 @@
 # Charaktere, Skills und Skill-Training vom Server – Umsetzungsplan
 
-Stand 2026-10-30. **Stufe 1 (1a und 1b) ist im Code umgesetzt**, hinter dem Schalter `DUST_CHAR_STORE=1` (standardmäßig
-aus). Sie ist im Prozess getestet, in RPCS3 noch nicht (Funde und Testhinweise in `NOTES.md`). Die Stufen 2 bis 5 sind offen. Außerdem ist
+Stand 2026-10-30. **Stufe 1 (1a, 1b) und Stufe 2 sind im Code umgesetzt**, hinter dem Schalter `DUST_CHAR_STORE=1`
+(standardmäßig aus). Beide sind im Prozess getestet, in RPCS3 noch nicht (Funde und Testhinweise in `NOTES.md`). Die Stufen 2b
+und 3 bis 5 sind offen. Außerdem ist
 der AUR-Store bereinigt (Loyalty-Items standardmäßig aus). Das Dokument beschreibt Ziel, Reihenfolge und offene Entscheidungen.
 
 Zur AUR-Wirtschaft (Quellen, Limits, Store-Bewertung, Euro-Einordnung) siehe `docs/aur_economy.md`. Sie wird erst ab Stufe 5 gebraucht.
@@ -193,6 +194,10 @@ Ziel: Echte Skill-Stufen, Kaufen/Upgraden kostet SP, SP wachsen mit der Zeit.
 7. **Optional 2b:** `respec` (alle Skills zurücksetzen), Sammel-Upgrade
    `POST mercenaryProgressionCollections` (`MercenaryProgressionSkillUpgrade-v1`, `loadoutProgressionClient.py`),
    Skill-Booster (`boosters`).
+
+**Umsetzung (2026-10-30):** `catma_service/skilldata.py` (`GET /skills`), `dust_server/skills.py`, Handler in `crest_app.py`,
+Admin-Seite „Characters“. Abweichungen vom Plan: `POST` legt Stufe **0** an (Skillbuch gelesen), nicht 1; Ablehnungen sind
+200 mit Log-Eintrag statt 400 (der Client fängt keine Fehler ab). Punkt 5 (SP-Zuwachs) lag schon in `store.py`.
 
 **Prüfen:** Neuer Charakter zeigt 8 Start-Skills und passende freie SP; Skill kaufen/upgraden → nach Neu-Login
 weiterhin da, freie SP gesunken; nach einigen Minuten sind die Gesamt-SP des aktiven Charakters serverseitig
