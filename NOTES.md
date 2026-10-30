@@ -408,7 +408,9 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     nutzt die Liste nicht (die Zuteilung machte CCPs Backend). Namen stehen im Client nur für die drei Offline-Corps. Weder
     die String-Caches noch ADAPTERDATA/MODULEDATA enthalten Corp-Namen. Die öffentliche ESI liefert alle 48
     (`POST https://esi.evetech.net/latest/universe/names/`), jetzt in `characters.STARTING_CORPORATIONS`. Die CATMA-Reihenfolge
-    ist alphabetisch nach Namen. Minmatar-Charaktere kommen zu 1000251 Brutor Vanguard (im Prozess geprüft).
+    ist alphabetisch nach Namen. Minmatar-Charaktere kommen zu 1000251 Brutor Vanguard. In RPCS3 bestätigt (Brutor-Charakter
+    2100100003, Anlegen, Login und Corp-Seiten ohne Fehler). Schönheitsfehler: Das Mitgliedsdokument
+    `/corporations/1000251/members/{id}/` kommt von CCPs Offline-Handler und verlinkt die Rollen unter 1000205.
     Noch offen: erster Login eines neuen Kontos ohne Charakter (drei leere Plätze).
 
 ## Hypothesen
