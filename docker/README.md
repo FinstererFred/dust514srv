@@ -25,7 +25,7 @@ $DUST_DATA/
   extracted_0319/                 entpackte PYTHON.SDAT/COMMON.SDAT (für catma)
   rpcs3/                          → /data im host-Container
     config/rpcs3/                 = $XDG_CONFIG_HOME/rpcs3
-      custom_configs/config_NPUB30643.yml   Null-Renderer, Frame limit Auto (unter Linux ohne config/-Unterordner)
+      custom_configs/config_NPUB30643.yml   Null-Renderer, Frame limit Auto, Thread Scheduler Mode: RPCS3 Scheduler (unter Linux ohne config/-Unterordner)
       patch_config.yml
       rpcn.yml                    Host-Konto (DustHost, zufälliges Passwort) am Stack-RPCN 127.0.0.1:31313
       dev_hdd0/game/NPUB30643/    Spiel mit gepatchter COMMON.SDAT (Dev-Hook, Log-Weiterleitung) und SAKE.INI

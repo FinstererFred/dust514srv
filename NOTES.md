@@ -28,6 +28,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **`Thread Scheduler Mode: RPCS3 Scheduler` am Host: +25 % Tick bei 32 Spielern (2026-10-30, übernommen):** 32 feuernde
+  Fake-Clients, je Lauf Host-Neustart und zwei 30-s-Fenster `host_tick.py`, Varianten abwechselnd. RPCS3-Scheduler
+  22,8 / 23,0 / 24,5 / 22,8 / 27,6 / 24,4 (Mittel 24,2 Ticks/s, p95 49–72 ms), Betriebssystem-Scheduler 20,4 / 21,3 / 18,7 /
+  18,5 / 19,6 / 16,8 / 19,5 / 20,6 (Mittel 19,4, p95 63–84 ms). Jeder RPCS3-Scheduler-Lauf lag über jedem Basislauf. Alle
+  Läufe 32/32 gespawnt, Host stabil. Gesetzt in `D:\rpcs3\config\custom_configs\config_NPUB30643.yml` (Backup
+  `*.before_sched`). Docker: dieselbe Zeile in die Host-Config im Datenordner (README ergänzt); unter Linux nicht gemessen.
+  Abstand zu 30 Hz bei 32 Spielern jetzt ~1,25x statt 1,6x.
+
 - **Fake-Clients meldeten falsche Level-Namen, korrigiert (2026-10-30):** Mess-Patch mit Zählern in
   `ClientHasInitializedLevelFor` (FUN_005ea628): mit 16 Fake-Clients ~100 000 Suchen/s in `ClientVisibleLevelNames`,
   0,0 % Treffer. Vergleich im Host-Speicher (PlayerController+0x2f0 → UNetConnection, Liste +0x5060, Weltname +0x5058,
@@ -379,6 +387,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 - Untätige Test-Clients unterschätzen die Last am Host deutlich. Für aussagekräftige Messungen braucht es Bewegung und Schüsse.
 
 ## Ausprobiert
+
+- **RPCS3-PPU-Optionen am Host, 32 feuernde Clients (2026-10-30, je ein Lauf, Basis 18,5–21,3 Ticks/s):** `PPU Vector NaN
+  Handling: false` 20,1 / 20,6 (kein Effekt), `Set DAZ and FTZ: true` 19,9 / 17,4 (kein Effekt bis schlechter),
+  `HLE lwmutex: true` 17,8 / 16,8 (eher schlechter). Alle zurückgenommen. Nur der Scheduler half (siehe Funde).
 
 - **Feuern mit dem Standard-Fitting (Aufladewaffe) zeigt keine Wirkung (2026-10-30):** Mit dem aufgezeichneten Fitting
   (Amarr Heavy Frame 352592, Waffe 368557, Magazin 4) lädt der Host die Waffe des Fake-Clients auf (`m_fCurrentCharge`
