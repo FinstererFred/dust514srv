@@ -280,11 +280,11 @@ Werte (Schild/Panzerung) entsprechen den Skills; `client.log` des Hosts zeigt �
 
 ## Stufe 5 – Später
 
-- **Fittings pro Charakter speichern** (heute CCPs gemeinsame Liste im `catma_service`-Speicher):
-  `GET/POST …/mercenary/fittings/`, `GET …/fittings/{id}/`, `PUT …/slots/{slot}/`; Starter-Fittings aus
-  `startingInventory` (`shouldGiveFitting`, `shouldMakeFittingDefault`).
-- **Inventar pro Charakter** (`inventory/{id}/owner/{id}/all/`) mit Start-Items; Käufe im ISK-Markt, AUR-Store und
-  LP-Store buchen ISK/AUR/LP ab und legen Items an.
+- ~~**Fittings pro Charakter**~~ und ~~**Inventar pro Charakter mit Käufen**~~: umgesetzt 2026-10-30 (siehe unten
+  „Umsetzung Stufe 5a“).
+- **Inventar im Gefecht:** Der Host nimmt weiter 999 von allem an, Verluste beim Tod werden nicht abgebucht.
+- **Inventar-Aktionen** `POST inventory/…/all/` (Item benutzen, an NPC verkaufen, verschenken; unterschieden am
+  Content-Type `InventoryItemUse`/`SellToNpc`/`GiveToAnotherCharacter`) sind noch nicht umgesetzt.
 - **Gefechtsbelohnungen** (SP/ISK nach Matchende): Der Host meldet heute nichts; neuer Dev-Endpunkt, den
   `dustdevhook` am Matchende aufruft.
 - **Login-Bonus** (`content/rewards.json`) wirklich gutschreiben, wenn `characterRewardReceived` gesetzt wird
@@ -292,6 +292,23 @@ Werte (Schild/Panzerung) entsprechen den Skills; `client.log` des Hosts zeigt �
 - **Web-Admin:** Seite „Characters“ aus Stufe 2 ausbauen – einzelne Skills, Inventar und Fittings ändern,
   Charakter löschen; AUR pro Konto statt global.
 - **AUR-Wirtschaft** (eigene Datei `docs/aur_economy.md`): AUR im Spiel verdienen statt kaufen.
+
+**Umsetzung Stufe 5a (2026-10-30), hinter dem Schalter:** `store.py` Schema 2 (Tabellen `inventory`, `fittings`,
+`fitting_slots`, `loyalty`, Spalten `characters.items_given`, `users.aur`), CATMA-Dienst `GET /fittings`
+(`fittingdata.py`: Slots jedes Adapters in CATMA-Reihenfolge, Namen wie CCPs Offline-Handler, Standardmodule).
+- Start-Inventar und Start-Fittings (`shouldGiveFitting`, Namen aus dem Katalog, z. B. „Frontline - AM“) bekommt jeder
+  Charakter einmal beim ersten Zugriff, auch bestehende Charaktere.
+- Fittings: Liste, Anlegen (201 mit `Location`, `{typeName}` wird ersetzt, `copySlotsFrom`), Umbenennen/Index/Standard
+  (PUT), Löschen, Slot setzen (PUT) und leeren (DELETE). Ein Slot ohne Eintrag zeigt das Standardmodul.
+- Käufe: ISK-Markt `POST /market/{region}/orders/buy/` (auch Sammelkauf mit `items`), AUR `POST /sales/` (400 ungültiges
+  Angebot, 409 Betrag passt nicht, leere Antwort = Erfolg), LP `POST /dust/asset/loyaltyStores/{corp}/offers/{type}/`.
+  Preise kommen vom Server, nicht aus der Anfrage. Zu wenig Geld: 403 mit Meldung (Popup im Client).
+  Der Charakter steht nicht im Pfad; es zählt der zuletzt vom Besitzer geöffnete (`ACTIVE_CHARACTERS`).
+- Der Client ändert sein Inventar nur über `OnItemsChanged` und wartet im Kauf-Popup darauf. ISK über
+  `OnAccountUpdated`, AUR über `OnDustUserAurumChange`, LP über `OnDustLoyaltyStoreUpdated` (lädt die Läden neu).
+- AUR pro Benutzer, LP pro Charakter und Corp. Bis zum ersten Kauf gelten die Werte aus `wallet.json` bzw.
+  `loyalty.json` (Web-Admin) als Startwert.
+- Skillbuch und Respec-Item (367499) werden verbraucht; ohne Item abgelehnt (200 + Log wie bei Skills).
 
 ## Offene Fragen und Entscheidungen
 

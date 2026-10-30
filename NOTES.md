@@ -435,6 +435,21 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   **Falle:** Mit `-autologinserver` setzt der Client `skipPSN` (`login.py`) und meldet sich mit Benutzername und Passwort an,
   also ohne RPCN-Ticket → gemeinsamer Offline-Token, Offline-Charaktere. Tests mit eigenen Charakteren nur ohne Autologin.
   Offen: Schild/Panzerung im Gefecht mit Skill-Boni vergleichen. Docker: `export_host_data.ps1` erneut ausführen.
+- **Stufe 5a, Inventar, Fittings und Käufe pro Charakter (2026-10-30), hinter dem Schalter:** Ausgangslage im RPCS3-Test:
+  Kauf im ISK-Markt (Warbarge Component, 10 ISK) → `POST /market/10000001/orders/buy/` 404 → Popup „Requested item not
+  found on the market“; Kaufen ging also nie. Umsetzung und Formate siehe `docs/character_server_plan.md` („Umsetzung
+  Stufe 5a“). Funde aus dem Client-Code:
+  - Das Kauf-Popup (`purchasePopup._BuyItem`) wartet in einer Schleife auf `OnPersonalInventoryChangedNotification` mit
+    dem gekauften Typ. Ohne `OnItemsChanged` vom Server hängt es.
+  - VGS-Kauf: Eine nicht leere Antwort auf `POST /sales/` wertet das Popup als Fehler („PurchaseFailed“). CCPs
+    Offline-Handler antwortet `{}`.
+  - Neue Fittings scheiterten bisher am Lokalisierungsdienst (`GetDisplayNameByID`), jetzt nicht mehr über CCPs Handler.
+  - Respec: Der Client benutzt das Item nicht selbst (`inventory2` ruft direkt `CallbackRespec`), der Server verbraucht es.
+  Im Prozess geprüft (Wegwerf-DB, zweiter CATMA-Dienst auf 8091): 24 Start-Items, 11 Start-Fittings, Fitting anlegen,
+  kopieren, Slot setzen/leeren, umbenennen, löschen, fremdes Fitting 404; ISK-Kauf mit Benachrichtigungen, zu wenig ISK
+  403, unbekannter Typ 404; AUR-Kauf 1000 → 975, Betrag falsch 409; LP-Kauf 5000 → 1000 plus ISK, zu wenig LP 403;
+  Respec verbraucht das Item; Skillbuch ohne Item abgelehnt, mit Item gelernt und verbraucht. Parität ohne Schalter
+  identisch (26 Anfragen). **In RPCS3 noch offen.**
 
 ## Hypothesen
 
