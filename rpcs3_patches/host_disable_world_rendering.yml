@@ -1,0 +1,26 @@
+# Entwurf (Funktionstest mit Clients offen): Listen-Host zeichnet die Welt nicht mehr.
+# Nur in die Patch-Datei des HOSTS eintragen (D:\rpcs3\patches\NPUB30643_patch.yml bzw. Docker-Host), nie bei Clients.
+#
+# Messung 2026-10-30 (Null-Renderer-Host, nur Host): GameViewportClient.bDisableWorldRendering per Speicher gesetzt
+# (DustGameViewportClient_0 +0xb4, Bit 0x10000000) -> 35,7 -> 59,4 Ticks/s, p95 36 -> 19 ms, Prozess-CPU 662 -> 478 %.
+# Der Konsolenbefehl "set" wirkt im Retail-Build nicht, kein Skript setzt das Flag.
+#
+# Die Viewport-Funktion ab 0x31b808 (GameViewportClient-Codebereich) liest das Flag an drei Stellen über r18:
+#   lwz r3,0xb4(r18); rlwinm r3,r3,4,31,31  (546327fe)
+# Der Patch ersetzt das rlwinm jeweils durch li r3,1, das Flag gilt dort also immer als gesetzt (wie der Speicher-Test).
+# Eine vierte Stelle mit demselben Muster (0x1a99fc, anderes Objekt in r25) bleibt unverändert.
+
+Version: 1.2
+
+PPU-ae3f946dfcb103b782f73f1cc5f90587e652f439:
+  "Listen host: disable world rendering":
+    Games:
+      "DUST 514":
+        NPUB30643: [ 03.19 ]
+    Author: "Dust 514 RPCS3 research"
+    Patch Version: 0.1
+    Notes: "Host only. Treats GameViewportClient.bDisableWorldRendering as set: the host's own view stays black, which roughly doubles the server tick on RPCS3."
+    Patch:
+      - [ be32, 0x0031be4c, 0x38600001 ] # li r3,1 (was rlwinm r3,r3,4,31,31)
+      - [ be32, 0x0031c008, 0x38600001 ] # li r3,1
+      - [ be32, 0x0031c414, 0x38600001 ] # li r3,1

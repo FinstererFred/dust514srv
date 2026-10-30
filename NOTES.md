@@ -54,6 +54,15 @@
   DustTester2–5 auf dem lokalen RPCN (`research/rpcn/test_account*.txt`). Spawnen per `tools/press_key.ps1` (erst X für
   Dialoge, dann V = Dreieck/Smart Deploy).
 
+- **Weltrendering am Host abschalten (2026-10-30):** `DustGameViewportClient_0` (+0xb4, Bit 0x10000000 =
+  `bDisableWorldRendering`) per `tools/guest_poke.py` gesetzt. Null-Renderer-Host, 4 gespawnte untätige Clients:
+  24,7 → **58,5 Ticks/s** (p95 50 → 21 ms), wieder an: 25,1. Nur Host: 35,7 → 59,4. Prozess-CPU 600 → 490 %. Danach
+  bestimmt erst der Game-Thread (64 % eines Kerns ≈ 11 ms pro Tick bei 5 Spielern). Konsolenbefehl `set` wirkt im
+  Retail-Build nicht, Show-Flags sind herauskompiliert, kein Skript setzt das Flag. Patch-Entwurf:
+  `rpcs3_patches/host_disable_world_rendering.yml` (drei `rlwinm` → `li r3,1` in der Viewport-Funktion ab 0x31b808), noch
+  nicht installiert. Funktionstest (Kollision fern vom Host, Treffer) steht aus.
+  `dust_server/dev_once.py` schickt einzelne Konsolenbefehle an den laufenden Host, ohne die Karte neu zu starten.
+
 ## Hypothesen
 
 - Der Tick am Host hängt an der Render-Kette (Game-Thread wartet auf `RenderingThread` → RSX-FIFO in RPCS3), auch mit
