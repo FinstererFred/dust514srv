@@ -42,10 +42,19 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     Kollisions-Hash oder Relevanz-Octree.
   - 4 % `0x11481f0` memmove, 3,8 % `0x1198304` TMap/TSet-FindId mit Pointer-Hash (z. B. Actor → Kanal),
     2,5 % `0x1197cd8`, 5,7 % `0x2b4768`, `0x2d5a5c`, `0x2d55a0` (noch nicht zugeordnet).
-  Offen: Die Frame-Zeit steigt von 11,4 auf 25,4 ms (+14 ms ≈ +120 %), der Gastcode-Anteil aber nur um ~28 % der
-  Wandzeit. Ein großer Teil der Mehrkosten pro Spieler steckt also vermutlich in Syscalls/HLE (Kandidat sys_net:
-  ~16 × 2 × 60 Pakete/s), die der Profiler als „idle“ zählt. Nächster Schritt: Syscalls zählen (RPCS3-Loglevel für
-  sys_net) oder den Host-Thread auf Windows-Ebene sampeln.
+  Die Vermutung, ein großer Teil der Mehrkosten stecke in Syscalls (der Profiler zählt sie als „idle“), ist widerlegt,
+  siehe nächster Fund. Das „idle“ im Profil stammt aus Ladephase und Leerlauf, nicht aus den Spielern.
+- **Host-Thread auf Windows-Ebene gesampelt (2026-10-30, `tools/thread_sampler.py`, je ~1000 Samples/s):**
+
+  | | CPU main_thread | JIT (Gastcode) | echtes Warten (ntdll Wait) | rpcs3.exe | Netz (DeviceIoControl) |
+  |---|---|---|---|---|---|
+  | Host allein, 15 s | 49 % | 43,5 % | 52,6 % | 3,6 % | 0,2 % |
+  | 16 feuernde Clients, 30 s | 97 % | 85,6 % | 7,2 % | 5,3 % | 1,7 % |
+
+  Die Mehrkosten pro Spieler sind fast ausschließlich Gastcode. sys_net und der übrige RPCS3-Kernel kosten zusammen
+  unter 10 %. Ohne Clients wartet main_thread die Hälfte der Zeit (Bildtakt/RenderingThread), mit 16 Clients kaum noch.
+  Folgerung: Hebel sind Patches am Gastcode (Level-Suche oben, dann Octree/TMap) oder schnellere PPU-Ausführung
+  (Recompiler), nicht RPCS3-Syscalls. Kernelzeit (21 %) ist größtenteils Overhead des Samplers (Suspend/Resume).
 - **Heap im emulierten Speicher bei 16 und 32 Spielern (2026-10-30, `tools/vm_footprint.py`):** UE3 legt seinen Heap in einen
   `sys_vm`-Bereich (`sys_vm_memory_map vsize=0x10000000 psize=0x9200000` ab 0x40000000, also 256 MB virtuell, 146 MB physisch).
   RPCS3 hinterlegt die ganzen 256 MB, deshalb zeigen Prozess-RAM und Dumps nichts. Der Allokator meldet aber jede 64K-Seite
