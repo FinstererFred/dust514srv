@@ -623,7 +623,13 @@ def join_battle(req):
     if config["variant"] == "listen":
         # A client hosts the map (?listen?battleID=...); it picks this member up from /dev/battle/members/
         # and registers the credential with its battle server; only then is the client told to connect.
-        member["team"] = team = config.get("listen_team", team)
+        team = config.get("listen_team", team)
+        if team == "auto":
+            # Alternate, starting with the defenders (the host is on the attackers). Rejoins count as new
+            # members, so this only roughly balances the teams.
+            with LISTEN_LOCK:
+                team = ("defender", "attacker")[len(LISTEN_MEMBERS) % 2]
+        member["team"] = team
         listen_member = register_listen_member(req, config, team)
         credential = listen_member["credential"]
     target = config[{"localmap": "target_localmap", "listen": "target_listen"}.get(config["variant"], "target_probe")]

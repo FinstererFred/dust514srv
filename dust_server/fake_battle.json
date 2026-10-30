@@ -23,7 +23,7 @@
     "address": "127.0.0.1",
     "port": 7777
   },
-  "listen_team": "defender",
+  "listen_team": "auto",
   "first_member_id": 2100001612,
   "mode_name": "Ambush",
   "theatre_name": "Lokale Gefechte",
