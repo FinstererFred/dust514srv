@@ -360,6 +360,9 @@ def character_document(req):
     corp = offline_result(f"/corporations/{char['corporation_id']}/")
     doc.update({
         "name": char["name"], "gender": char["gender"], "description": "", "skillPointsPerDay": float(sp_per_day(char)),
+        # myCharactersClient.GetPortrait reads data['portrait'] (KeyError without it, character sheet breaks); None
+        # makes GetPortraitImage use the default portrait. We have no portrait images to serve in 32x32..256x256.
+        "portrait": None,
         "bloodLine": link(req, f"/bloodlines/{char['bloodline_id']}/", id=char["bloodline_id"]),
         "race": link(req, f"/races/{char['race_id']}/", id=char["race_id"]),
         "corporation": {**doc.get("corporation", {}), **corporation_link(req, char["corporation_id"]),

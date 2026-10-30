@@ -369,6 +369,19 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     der Server ohne Schalter noch genau wie vor 1a antwortet. Er ist auch Teil der Unit-Tests.
   - Geprüft im Prozess: ohne Schalter 26 Anfragen identisch (auch Skill-POST/PUT), mit Schalter Buch, Upgrade und die vier
     Ablehnungsfälle. In RPCS3 noch offen: Zeigt der Skill-Bildschirm die freien SP richtig, und klappt Upgraden ohne Trennung?
+  - **Erster RPCS3-Test (2026-10-30, DustTester2 auf 8081, FinstererFred als Host-Konto auf 8080):** Die Charakterauswahl zeigt den
+    eigenen Charakter (25 000 ISK, 500 000 SP, Amarr Templars). Der Skill-Bildschirm zeigt die 8 Start-Skills und die richtigen freien SP.
+    Upgrade 353435 von Stufe 1 auf 2 ohne Trennung, freie SP 363 170 → 344 520 (−18 650). Einziger 404 ist das Corp-Logo
+    (`/images/corporations/…_64.png`, schon immer). `KeyError` 'location'/'fulfillments' in `entitlementsClient` gab es auch vorher.
+    Live-Update aus dem Admin bestätigt: Stufe zurück auf 1, Client bekommt `OnCharacterSkillChangeFromBackend` und zeigt es sofort.
+    Skillbuch bestätigt: In Assets → Skills ✕ auf ein Buch mit grünem Haken → „Use Skillbook“ (nur für unbekannte Skills mit
+    erfüllten Voraussetzungen). Amarr Light Dropsuits 364570 steht danach auf Stufe 0, die SP bleiben gleich.
+    Charakterblatt: `myCharactersClient.GetPortrait` wirft `KeyError: 'portrait'`, weil unser `/characters/{id}/` kein `portrait`
+    hat. Fix: `"portrait": None` → Standardporträt, in RPCS3 geprüft (Charakterblatt ohne Fehler).
+    Neu-Login nach Server-Neustart bestätigt: Stufen, Skillbuch (L0) und freie SP (363 170) bleiben erhalten. Außerdem `IndexError` in
+    `dropsuitProgression.UpdateAvatarView` (`AVATAR_ICON_DATA[frame][race]`). Die Seite war vorher nie offen, wahrscheinlich ein Client-Fehler
+    bei einem vierten Frame-Reiter. Noch nicht untersucht.
+    Noch offen: Ablehnung, passiver Zuwachs, Respec (`PUT` auf den `respec`-Link, vom Server noch nicht behandelt).
 
 ## Hypothesen
 
