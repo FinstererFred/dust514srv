@@ -71,6 +71,20 @@
   wie viel Luft darüber bleibt, zeigt erst ein Lauf mit Frame limit Off.
   Ein Client aktiv (Nutzer läuft mit c herum und schießt auf b/d, 30 s): 57,5 Ticks/s laufend (p95 22,8 ms, max 54,9 ms),
   59,4 angehalten, `main_thread` 77 %. Kein messbarer Unterschied zu untätig, solange der Host am Frame-Limit hängt.
+- **60er-Grenze ist VSync im Spiel, Kommandozeile `-novsync` hebt sie auf (2026-10-30):** Host mit Patch, Null-Renderer.
+  RPCS3 `Frame limit: Off` allein: 59,0 Ticks/s; zusätzlich `Vblank Rate: 120`: 58,5 (zurückgenommen). Das EBOOT kennt
+  `UseVsync`/`novsync`; mit Spielargument `-novsync` (nach `--` an RPCS3, steht im TTY.log als CommandLine) läuft der Host frei,
+  Spielzeit weiter 1:1 (`game_speed 1.0`). Host-Config jetzt `Frame limit: Off` (Backup `*.before_nolimit`).
+
+  | 5 Spieler, `-novsync` | Ticks/s laufend | ms/Tick | Ticks/s angehalten | `main_thread` |
+  |---|---|---|---|---|
+  | verbunden, nicht gespawnt | 87,3 | 11,5 | – | 77 % |
+  | 4 gespawnt, untätig | 84,0 (p95 18,0 ms) | 11,9 | 89,5 (11,2 ms) | 88 % / 70 % |
+
+  Gespawnte untätige Pawns kosten ohne Weltrendering nur noch ~0,1 ms pro Tick (vorher ~1,5 ms); die frühere Pawn-Last war also
+  fast ganz Rendering. Jetzt begrenzt der Game-Thread (fast ein voller Kern). Bei 30 Ticks/s Ziel bleiben rund 21 ms Reserve
+  pro Tick. Der Host-Start mit `-novsync` ist noch nicht dauerhaft eingetragen (`restart_host.ps1`, `set_host_mode.py`, Docker);
+  für den Betrieb wäre ein festes Limit sinnvoller als freies Laufen (CPU).
 - **Teams automatisch:** `listen_team: "auto"` in `fake_battle.json` verteilt Beitretende abwechselnd (erster → Verteidiger,
   `Team=1`; zweiter → Angreifer, `Team=0`). Nachbeitritte zählen als neue Mitglieder, das ist also nur grob ausgeglichen.
   `dust_server/dev_once.py` schickt einzelne Konsolenbefehle an den laufenden Host, ohne die Karte neu zu starten.
@@ -94,8 +108,8 @@
 ## Offene Fragen
 
 - Gibt es Grenzen im NetDriver oder in `sys_net`/RPCS3? Bis 5 Spieler keine.
-- Was begrenzt den Host nach dem Render-Patch bei 59 Ticks/s: das Frame-Limit (PS3 Native) oder der Game-Thread? Wie skaliert er mit
-  gespawnten, aktiven Spielern?
+- Wie skaliert der Game-Thread (~11 ms/Tick bei 5 Spielern) mit aktiven Spielern und mit mehr als 5? Wie hält man den Host
+  ohne VSync auf einem festen Takt (z. B. 30 oder 60), damit er nicht unnötig CPU verbrennt?
 - Wie teuer sind aktive Spieler (Laufen, Schießen) im Vergleich zu untätigen Pawns?
 - Ab wie vielen Clients lohnt ein zweiter PC, damit die CPU-Konkurrenz die Messung nicht verfälscht?
 - Wie lassen sich headless Clients mit Eingabe-Wiedergabe betreiben (Pad-Eingaben in RPCS3 skripten)?
