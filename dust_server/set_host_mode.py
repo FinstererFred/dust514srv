@@ -32,7 +32,7 @@ MODES = {
 def start_command(mode, credential):
     mode_id, gametype, level, map_name, bfid, terraform, _ = MODES[mode]
     return (f"Start {map_name}?gametype={gametype}?gameModeLevel={level}?bfid={bfid}?loadDefaultOutpost"
-            f"?Terraform={terraform}?LightingMode=MOOD_DAY?listen?battleID=514001?credential={credential}"
+            f"?Terraform={terraform}?LightingMode=MOOD_DAY?listen?MaxPlayers=32?battleID=514001?credential={credential}"
             f"?Team=0?Name=DustPlayer?PlayerControllerClass=DustGame.DustDevPlayerController")
 
 

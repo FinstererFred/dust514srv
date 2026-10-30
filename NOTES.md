@@ -12,6 +12,9 @@
   - `InitGame` liest die URL-Option: Im Bytecode steht `MaxPlayers = Clamp(GetIntOption(Options, "MaxPlayers", MaxPlayers), 0,
     MaxPlayersAllowed)` (StringConst `MaxPlayers` bei 0x44a6d27e, Referenz auf `GameInfo.MaxPlayers` @0x42caea70). Mit
     `?MaxPlayers=32` in der Startzeile des Hosts (`dust_server/set_host_mode.py`, `start_command`) sollte die Grenze bei 32 liegen.
+  - **Bestätigt (2026-10-30, Ambush, Abbild `..._20261030_082609_live`):** Mit `?MaxPlayers=32` in der Startzeile steht am Host
+    `MaxPlayers=32` (`MaxPlayersAllowed=100`, `NumPlayers=1`). Die Option ist jetzt fest in `set_host_mode.py`. Ob wirklich mehr
+    als 16 Spieler beitreten können, ist damit noch nicht getestet.
   - DustGame referenziert `AtCapacity` und `PreLogin`, überschreibt sie also möglicherweise. Ob dort eine eigene Grenze steckt,
     ist nicht geprüft.
   - Property-Offsets (PS3): `GameInfo.MaxSpectators` 0x214, `MaxPlayers` 0x220, `MaxPlayersAllowed` 0x224, `NumPlayers` 0x228;
@@ -34,8 +37,6 @@
 
 ## Offene Fragen
 
-- Hebt `?MaxPlayers=32` in der Host-Startzeile `GameInfo.MaxPlayers` wirklich auf 32? (Host starten, Abbild ziehen, mit
-  `uprops.py` auf `DustSkirmishGame_0` +0x220 prüfen.)
 - Prüft `DustTeamGame.PreLogin`/`AtCapacity` eine eigene Grenze, etwa `mMaxPlayersPerTeam` oder Squad-Größen?
 - Gibt es weitere Grenzen im NetDriver (MaxClients, Verbindungs-Arrays) oder in `sys_net`/RPCS3 (Sockets)?
 - Wie lässt sich der Server-Tick am Host zuverlässig messen, getrennt von der FPS?
