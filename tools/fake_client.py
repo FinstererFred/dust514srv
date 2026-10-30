@@ -162,13 +162,19 @@ class Connection:
         return messages
 
 
-FITTING = "352592:369179+-1,-1+-1,368557+-1,-1+-1,-1+-1,-1+-1"   # recorded default fitting
+# Fittings "<suit type>:<module>+-1,..." per slot in suit order (offline fittings in the client's offlineResourceFittings):
+FITTINGS = {"heavy": "352592:369179+-1,-1+-1,368557+-1,-1+-1,-1+-1,-1+-1",    # recorded default: Amarr Heavy Frame, a
+                                                                               # weapon that charges while held
+            "assault": "354941:368949+-1,-1+-1,-1+-1,-1+-1,-1+-1,353120+-1,-1+-1,-1+-1"}  # Assault Dropsuit + rifle
 ACCEL = 25000.0                                     # |InAccel| of a recorded walking client
 QUIET = {21, 22, 56, 57, 59, 60, 61}                # PRI/Pawn properties and move corrections, not printed
 ADJUST_WITH_STATE = {57, 60, 61}                    # Short-, -, LongClientAdjustPosition
 SHARED_COMPONENT = "DustGame.Default__DustControllerSharedComponent"
 INVENTORY = "DustGame.Default__DustPawnInventoryManager"
 WEAPON = "DustGame.Default__DustHandheldWeapon"
+# ServerRefreshCachedViewportInfo(DustViewportInfo) as a recorded client sent it ~1 s after GivePawn, copied verbatim
+# (struct layout not decoded yet). Test: without it the host charges the weapon but no shot follows.
+VIEWPORT_INFO = (bytes.fromhex("bf852c010088400100886800006c0629d3ebfbb39af119f2ea26380000c028"), 246)
 SOCKET_NAME = re.compile(r"^(small|medium|large|op|backdrop)\d+$", re.I)
 STRUCTURE_NAME = re.compile(r"^[A-Z]{2}_GA_\w+$")
 NAMES_PER_BUNCH = 8                                 # about 230 bits per name: stays well under MaxPacket
@@ -349,7 +355,7 @@ class Player:
                 self.streamed = True
             self.next_levels = now + 0.1
         if self.pawn is None and now >= self.next_spawn:
-            pickled = "(lp1\n(S'%s'\np2\ntp3\na(dp4\na." % FITTING
+            pickled = "(lp1\n(S'%s'\np2\ntp3\na(dp4\na." % FITTINGS[self.args.fitting]
             self.send(("InvokeSvcMethodOnBattleServer", "battleServer", "SpawnCharacterWithFitting", pickled))
             self.begin_spawn = now + 0.5            # after the battle server confirmed the fitting (asynchronous)
             self.next_spawn = now + self.args.spawn_retry
@@ -359,17 +365,21 @@ class Player:
             self.begin_spawn = None
         if self.pawn is not None and not self.armed and WEAPON in self.levels.channels:
             weapon = self.levels.channels[WEAPON]
+            self.conn.send(actor=[(1, True) + VIEWPORT_INFO])
             self.send_actor(INVENTORY, "ServerSetCurrentWeapon", weapon)
             self.send_actor(WEAPON, "ServerSetCurrentFireMode", 0)
             self.armed = True
             if self.args.fire_interval:
                 self.next_fire = now + random.uniform(1.0, self.args.fire_interval)
         if self.next_fire and now >= self.next_fire:
+            self.send(("ServerSetRightTriggerHeld", True))   # recorded together with ServerStartFire
             self.send_actor(WEAPON, "ServerStartFire", 0, now - self.joined + 1.0)
             self.conn.stats["bursts"] = self.conn.stats.get("bursts", 0) + 1
             self.stop_fire, self.next_fire = now + self.args.fire_burst, now + self.args.fire_interval
         if self.stop_fire and now >= self.stop_fire:
             self.send_actor(WEAPON, "ServerStopFire", 0)
+            self.send(("ServerSetRightTriggerHeld", False))
+            self.send(("ServerReloadWeapon", 0))    # after every burst, so the clip never runs dry
             self.stop_fire = None
         if now >= self.next_move:
             accel = (0, 0, 0)
@@ -416,6 +426,7 @@ def main():
     ap.add_argument("--move-rate", type=float, default=30, help="ServerMove calls per second")
     ap.add_argument("--fire-interval", type=float, default=0, help="seconds between bursts once armed (0: no firing)")
     ap.add_argument("--fire-burst", type=float, default=1.5, help="seconds the trigger stays down per burst")
+    ap.add_argument("--fitting", choices=sorted(FITTINGS), default="heavy")
     args = ap.parse_args()
 
     replay = load_replay(args.replay, {int(c) for c in args.replay_channels.split(",")}) if args.replay else []

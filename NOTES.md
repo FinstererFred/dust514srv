@@ -7,8 +7,8 @@ Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel
 
 0. **Messreihe mit Fake-Clients fortsetzen.** Spawn und Laufen gehen (siehe Funde). Nächstes: 16 → 32 Fake-Clients
    (`--play`, je eigene Bind-Adresse 127.0.x.y), dabei Fake-Client-CPU pro Prozess messen (ab ~16 evtl. auf zweiten PC).
-   Offen: Schießen (Feuer-RPCs noch nicht zugeordnet), daher Last noch ohne Waffenfeuer; Pawn-Rückfall nach Tod/Respawn
-   ungetestet.
+   Schießen geht mit `--fitting assault --fire-interval 5 --fire-burst 2` (siehe Funde). Ungetestet: Treffer auf andere
+   Spieler, Tod und Respawn eines Fake-Clients (Spawn-Logik läuft dann erneut, `armed` wird bei neuem Pawn zurückgesetzt).
 1. **Billige Test-Clients (RPCS3, zurückgestellt).** Null-Client läuft (`D:\rpcs3_e`, siehe Funde), braucht aber ≥ 2 Kerne, weil die Threads aktiv
    warten. `Max SPURS Threads: 1` erledigt (2 Kerne: 47 Hz). Nächste Hebel an der Render-Kette (RenderingThread +
    rsx::thread ~170 %). `Frame limit: 30` scheidet aus (siehe Ausprobiert). Bleibt: das Rendern selbst weiter abschalten
@@ -29,6 +29,28 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Fake-Clients schießen (2026-10-30, Mitschnitt `dust_server/logs/udp_proxy_fire.jsonl`):** Ablauf nach `GivePawn`:
+  `ServerSetCurrentWeapon(<Waffenkanal>)` auf dem eigenen `DustPawnInventoryManager` (Index 23 von 27), auf der
+  `DustHandheldWeapon` `ServerSetCurrentFireMode(0)` (52/54); je Stoß auf Kanal 1 `ServerSetRightTriggerHeld(true)` (126)
+  plus `ServerStartFire(FireModeNum, TimeStamp)` (26/54), beim Loslassen `ServerStopFire` (27/54) plus
+  `ServerSetRightTriggerHeld(false)`; Nachladen `ServerReloadWeapon(0)` (157) auf Kanal 1. Alle Bunches bitgleich zur
+  Aufnahme (Index-Breite hängt vom Wert ab: 26 von 54 = 5 Bit). Wirkung auf dem Host nur mit dem Assault-Fitting
+  (Militia Assault Dropsuit 354941, Militia Assault Rifle 353120, `--fitting assault`): Magazin (`mAmmoInClip0` +0x848)
+  56 → 29 je 2-s-Stoß, nach dem Nachladen wieder 56. Das aufgezeichnete Standard-Fitting trägt eine Aufladewaffe
+  (siehe Ausprobiert). Inventar und Waffe öffnet der Host beim Spawn nur dem Besitzer; der Fake-Client nimmt den
+  jeweils letzten Kanal dieses Archetyps.
+- **Host-Last mit laufenden und schießenden Fake-Clients (2026-10-30, Stoß 2 s alle 5 s, Client b beendet):**
+
+  | Fake-Clients | Ticks/s | Tick Mittel / p95 | main_thread | RSS |
+  |---|---|---|---|---|
+  | 0 | 87,8 | 11,4 / 17,8 ms | – | 1455 MB |
+  | 1 | 86,9 | 11,5 / 17,6 ms | 75 % | 1456 MB |
+  | 4 | 82,8 | 12,1 / 17,2 ms | 93 % | 1595 MB |
+  | 8 | 60,7 | 16,5 / 23,8 ms | 94 % | 1595 MB |
+
+  Gegen die Reihe ohne Feuern (85,3 / 75,4 / 69,7): bei 8 rund 9 Ticks/s weniger, bei 4 sogar mehr. Je ein Lauf, die
+  Streuung liegt also bei mehreren Ticks/s; für belastbare Aussagen Läufe wiederholen. RSS diesmal ~1,5 GB statt 2,4 GB
+  (anderer Zustand des Host-Prozesses nach dem Beenden von Client b, nicht untersucht).
 - **Host-Last mit laufenden Fake-Clients (2026-10-30, `host_tick.py --log`, Host `D:\rpcs3` Null-Renderer, `-novsync`):**
   alle Fake-Clients gespawnt und laufend (~26 `ServerMove`/s je Client), Mittel über 30 s:
 
@@ -269,15 +291,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Ausprobiert
 
-- **Fake-Client feuert, Host schießt nicht (2026-10-30):** Ausrüsten klappt wie beim echten Client
-  (`ServerSetCurrentWeapon(<Waffenkanal>)` auf `DustPawnInventoryManager` Index 23/27, `ServerSetCurrentFireMode(0)` auf
-  `DustHandheldWeapon` 52/54, beide bitgleich zur Aufnahme): Host-`Pawn.Weapon` (+0x370) wird gesetzt. Danach
-  `ServerStartFire(FireModeNum 0, TimeStamp)` (26/54) und `ServerStopFire(0)` (27/54) in Stößen: `Pawn.FlashCount` (+0x213)
-  bleibt 0, `InventoryManager.PendingFire` (+0x1e8) bleibt [0, 0], Waffe Clip 4 / geladen 4 (`mAmmoInClip0` +0x848,
-  `mAmmoLoaded0` +0x84c), `Pawn.bNoWeaponFiring` (+0x20c, Maske 0x00400000) aus. `Weapon.ServerStartFire` → `BeginFire` →
-  `DustWeapon.BeginFire` (HasAmmo nativ, HasCap) → `SetPendingFire` wird also nicht erreicht. Der echte Client ruft vorher
-  `SyncFireIDToServer` (→ `ServerSetFireID`, 53/54) auf. Nötig: Mitschnitt eines echten Clients beim Schießen.
-  Werkzeuge: `pawn_list.py` zeigt jetzt Weapon und FlashCount; `fake_client.py --fire-interval/--fire-burst`.
+- **Feuern mit dem Standard-Fitting (Aufladewaffe) zeigt keine Wirkung (2026-10-30):** Mit dem aufgezeichneten Fitting
+  (Amarr Heavy Frame 352592, Waffe 368557, Magazin 4) lädt der Host die Waffe des Fake-Clients auf (`m_fCurrentCharge`
+  +0x938 steigt in ~1 s auf 1,0, beim Loslassen `m_fCachedCharge` +0x93c = Ladung, d. h. `Charging.Fire_Internal` →
+  `SendToFiringState`), aber Magazin bleibt voll und `ClientHandleExplosion` (142) kommt nicht; beim echten Client sank
+  das Magazin 4 → 3 und 142 kam 160 ms nach dem Loslassen. Auch mit kopiertem `ServerRefreshCachedViewportInfo` nicht.
+  Ursache offen, umgangen über das Assault-Fitting (siehe Funde). `Pawn.FlashCount` taugt nicht als Schussnachweis
+  (blieb auch beim echten Schuss 0); Magazin (`mAmmoInClip0` +0x848) schon. Falscher Weg vorher: `PendingFire` (+0x1e8)
+  bleibt bei Aufladewaffen immer 0, `DustWeapon.BeginFire` geht dort in den Zustand `Charging`.
 
 - **`Frame limit: 30` am Null-Client (2026-10-30, `D:\rpcs3_e`, Backup `*.before_frame30`):** Unbrauchbar. Login extrem langsam
   (~25 s zwischen CREST-Anfragen, nach 10 min erst bei `/accounts/`), danach Stillstand ohne tickende Welt. V-Drücke während

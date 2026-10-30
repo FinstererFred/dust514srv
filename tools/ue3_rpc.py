@@ -16,7 +16,7 @@ from ue3_packets import BitReader
 MAX_INDEX = 212
 INDEX = {"ServerMove": 54, "ServerUpdatePing": 62, "ServerAcknowledgePossession": 42, "AskForPawn": 40,
          "ServerUpdateLevelVisibility": 91, "ServerBeginSpawnProcess": 174, "ServerRefreshCachedViewportInfo": 191,
-         "InvokeSvcMethodOnBattleServer": 197, "ServerSetLeftTriggerHeld": 125, "ServerOnStreamingFinished": 173,
+         "InvokeSvcMethodOnBattleServer": 197, "ServerSetLeftTriggerHeld": 125, "ServerSetRightTriggerHeld": 126, "ServerReloadWeapon": 157, "ServerOnStreamingFinished": 173,
          # client functions (host -> client)
          "GivePawn": 41, "ClientPreRestartPlayer": 183, "VeryShortClientAdjustPosition": 56,
          "ClientUpdateLevelStreamingStatus": 90, "ClientStartCheckStreaming": 172, "ClientSetTimeLeftBeforeRespawn": 177,
@@ -40,7 +40,8 @@ ACTOR_RPCS = {
 # Parameter types in declaration order. "object" is an actor reference; on the wire a big-endian int32 that matched the
 # actor's channel index (GivePawn/ServerAcknowledgePossession, 2026-10-30), echoed back unchanged.
 SCHEMA = {"ServerMove": ["float", "vector", "vector", "byte", "byte", "int"], "ServerUpdatePing": ["int"],
-          "ServerAcknowledgePossession": ["object"], "AskForPawn": [], "ServerBeginSpawnProcess": [], "ServerOnStreamingFinished": [],
+          "ServerAcknowledgePossession": ["object"], "AskForPawn": [], "ServerBeginSpawnProcess": [], "ServerOnStreamingFinished": [], "ServerSetLeftTriggerHeld": ["bool"],
+          "ServerSetRightTriggerHeld": ["bool"], "ServerReloadWeapon": ["int"],
           "InvokeSvcMethodOnBattleServer": ["str", "str", "str"], "ServerUpdateLevelVisibility": ["name", "bool"]}
 # Names and object paths go through a per-direction cache: the first use writes the full form (cache id from 0x401 up,
 # int32 length, text with terminator, int32 FName number), later uses only the negated cache id (no number).
