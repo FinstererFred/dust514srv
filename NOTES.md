@@ -25,11 +25,40 @@
   Threads: `rsx::thread` 93 %, sechs `MainCellSpursKernel` je 82–92 %, PPU `RenderingThread` 44 %, PPU `main_thread` 30 %,
   PhysX 1 %.
 
+- **Null-Renderer-Host (2026-10-30, Frame limit PS3 Native):** 31,5–31,8 Ticks/s statt 24,9 mit Vulkan, RSS 2,4 statt 4,5 GB.
+  Am Host bremst also das Rendern, nicht die Spiellogik.
+- **Skalierung 1 → 5 Spieler (2026-10-30, alles auf einem PC):** Host mit Null-Renderer auf CCD0 (CPU 0–11), Clients
+  `rpcs3_b`–`rpcs3_e` (Vulkan) auf CCD1 (12–23). „Angehalten“ = alle Client-Prozesse 8 s suspendiert, zeigt die reinen
+  Kosten am Host ohne CPU-Konkurrenz. Rohdaten: `dust_server/logs/host_tick.jsonl` (lokal).
+
+  | Spieler (Host + Clients) | Zustand | Ticks/s laufend | Ticks/s angehalten |
+  |---|---|---|---|
+  | 1 | – | 31,5 | – |
+  | 2 / 3 | im Deploy-Bildschirm, nicht gespawnt | 29,1 / 26,6 | 32,4 / 32,4 |
+  | 2 / 3 / 5 | gespawnt, untätig (Abwärtsreihe) | 27,6 / 24,4 / 22,6 | 29,7 / 27,7 / 26,5 |
+
+  Ungespawnte Spieler kosten den Host praktisch nichts. Jeder gespawnte Pawn kostet grob 1,5 ms pro Tick
+  (31,8 ms → 38 ms bei 4 Remote-Pawns). Linear hochgerechnet wären es bei 32 untätigen Spielern ~78 ms, also ~13 Ticks/s.
+  Das ist nur ein grober Anhaltspunkt: wenige Punkte, untätige Pawns, Clients auf demselben PC, `NumPlayers` sinkt nach
+  dem Beenden eines Clients erst nach dem Verbindungs-Timeout. Der `main_thread` bleibt dabei bei 30–37 % eines Kerns,
+  `RenderingThread` bei ~30 %, `rsx::thread` bei 60–70 %. Auch mit Null-Renderer ist der Game-Thread also nicht der Engpass.
+- **Idle-Kick:** `GameInfo.MaxIdleTime` ist 0 (setzbar über `DustServerConfig` `[battle] idleKickTime` in
+  `DustTeamGame.LoadBattleConfig`). Es kickt `DustPlayerController` im Zustand `Dead` (Deploy-Bildschirm, kein Spawnpunkt):
+  nach `mAllowedIdleTime` (30 s) `WarnPlayerToRespawn`, dann Chess-Timer `mChessRespawnTime` → `KickIdlePlayer`. Beobachtet
+  wurden 7–8 min bis zum Kick. Mit `-autologinbattle` tritt der Client danach von selbst wieder bei. Gespawnte Spieler betrifft
+  das nicht.
+- **Mehrere Test-Clients auf einem PC:** Alle sprechen HTTP von 127.0.0.1 (die RPCS3-Bind-Adresse gilt nur für Spielsockets).
+  Deshalb braucht jeder Client einen eigenen CREST-Port (8081–8084, `TEST_CLIENT_PORTS` in `crest_app.py`). Benachrichtigungen
+  gehen an Adresse plus Port (`client_key`). Vorher bekamen alle Clients auf 8081 jede Beitrittsnachricht, und ein früherer Client
+  hat sich mit der Credential des neuen verbunden. Instanzen: `D:\rpcs3_b` … `D:\rpcs3_e`, Bind 127.0.0.2–.5, RPCN-Konten
+  DustTester2–5 auf dem lokalen RPCN (`research/rpcn/test_account*.txt`). Spawnen per `tools/press_key.ps1` (erst X für
+  Dialoge, dann V = Dreieck/Smart Deploy).
+
 ## Hypothesen
 
-- Der Tick am Host hängt nicht am Game-Thread: `main_thread` braucht nur 30 % eines Kerns und wartet den Rest der Zeit,
-  vermutlich auf `RenderingThread`/RSX oder SPU-Jobs. Wenn das stimmt, kosten zusätzliche Spieler zunächst wenig, und der Hebel
-  liegt beim Rendern auf dem Host (Null-Renderer, Effekte abschalten). Prüfen: dieselbe Messung im Null-Renderer-Host.
+- Der Tick am Host hängt an der Render-Kette (Game-Thread wartet auf `RenderingThread` → RSX-FIFO in RPCS3), auch mit
+  Null-Renderer. Mehr Pawns bedeuten mehr Zeichenbefehle. Hebel wäre, das Rendern am Host weitgehend abzuschalten (UE3
+  `show`-Flags, Viewport nicht zeichnen, Patch im RenderingThread). Ein Recompiler für den PPU-Code würde daran wenig ändern.
 - Die SPU-Kernel-Last von 80–90 % ist möglicherweise größtenteils Warten (SPURS-Polling), keine echte Arbeit.
 - Der Speicher pro Verbindung (Channels, Replikationsstate) könnte im emulierten 256-MB-Hauptspeicher knapp werden, auch wenn ein Client
   32 Pawns problemlos hält. Die 4,6 GB Host-RAM sagen darüber nichts.
@@ -39,6 +68,8 @@
 
 ## Offene Fragen
 
-- Gibt es Grenzen im NetDriver (MaxClients, Verbindungs-Arrays) oder in `sys_net`/RPCS3 (Sockets)? (Test mit 3–4 Clients)
-- Wartet `main_thread` auf den RenderingThread, auf RSX oder auf SPU-Jobs? Wie sehen die Werte mit Null-Renderer aus?
+- Gibt es Grenzen im NetDriver oder in `sys_net`/RPCS3? Bis 5 Spieler keine.
+- Worauf genau wartet `main_thread`: RenderingThread, RSX-FIFO oder SPU-Jobs? Lässt sich das Zeichnen am Host abschalten?
+- Wie teuer sind aktive Spieler (Laufen, Schießen) im Vergleich zu untätigen Pawns?
+- Ab wie vielen Clients lohnt ein zweiter PC, damit die CPU-Konkurrenz die Messung nicht verfälscht?
 - Wie lassen sich headless Clients mit Eingabe-Wiedergabe betreiben (Pad-Eingaben in RPCS3 skripten)?

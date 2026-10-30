@@ -225,8 +225,9 @@ class BattleProbeHandler(socketserver.BaseRequestHandler):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="0.0.0.0")
-    parser.add_argument("--ports", default="80,443,8080,8081",
-                        help="comma-separated list of ports (8081: second client, dev commands from dev_commands_8081.json)")
+    parser.add_argument("--ports", default="80,443,8080,8081,8082,8083,8084",
+                        help="comma-separated list of ports (8081+: test clients on this machine, one port each, "
+                             "dev commands from dev_commands_8081.json)")
     parser.add_argument("--client-log-port", type=int, default=8514, help="UDP port for client log lines")
     parser.add_argument("--battle-probe-port", type=int, default=17777,
                         help="UDP port logged as a fake battle server (not 7777, which a listen server needs)")

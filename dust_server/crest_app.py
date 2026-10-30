@@ -60,7 +60,7 @@ class NotificationHub:
     KEEP_ALIVE_SECONDS = 10
 
     def __init__(self):
-        self.streams = {}  # stream id -> {"owner": path, "peer": address, "queue": Queue, "sn": next sequence number}
+        self.streams = {}  # stream id -> {"owner": path, "peer": client_key(), "queue": Queue, "sn": next sequence number}
 
     def create(self, owner, peer=None):
         stream_id = uuid.uuid4().hex
@@ -70,7 +70,7 @@ class NotificationHub:
     def send(self, owner, data, peer=None):
         """Queue a notification for every stream created by `owner` (e.g. '/characters/123/notifications/').
 
-        With `peer`, only for streams opened from that address: all local players and the listen-server
+        With `peer` (client_key), only for streams opened by that client: all local players and the listen-server
         host share CCP's offline character, so the owner alone does not tell their clients apart.
         """
         for stream in self.streams.values():
@@ -294,7 +294,7 @@ def update_mercenary(req):
 
 @route("POST", r"^/(users|characters)/\d+/notifications/$")
 def create_notification_stream(req):
-    stream_id = HUB.create(req["path"], req.get("peer"))
+    stream_id = HUB.create(req["path"], client_key(req))
     return RawResponse(b"", "application/json", {"Location": f"{req['base']}/notifications/streams/{stream_id}/"}, status=201)
 
 
@@ -634,7 +634,7 @@ def join_battle(req):
     joined = {"contentType": "application/vnd.ccp.eve.OnBattleMemberJoined-v1", "body": member}
     # Only to the joining client: the host has the same character, and a host that gets the connect
     # joins its own battle as a client, leaves the listen map and drops every player.
-    peer = req.get("peer")
+    peer = client_key(req)
     threading.Timer(config["joined_delay_seconds"], HUB.send, args=(owner, joined, peer)).start()
     connect_data = {"contentType": "application/vnd.ccp.eve.OnBattleMemberConnect-v1", "body": connect}
     if listen_member:
@@ -677,8 +677,23 @@ def register_listen_member(req, config, team):
 HOST_PEERS = {p.strip() for p in os.environ.get("DUST_HOST_PEERS", "127.0.0.1,::1,::ffff:127.0.0.1").split(",") if p.strip()}
 
 
+# Extra RPCS3 instances on the host's own machine (multiplayer and scaling tests) also come from 127.0.0.1, so
+# each gets its own port: 8081 for client 2, 8082 for client 3, ... (dev commands from dev_commands_8081.json).
+TEST_CLIENT_PORTS = range(8081, 8090)
+
+
+def test_client(req):
+    port = req["base"].rsplit(":", 1)[-1]
+    return port.isdigit() and int(port) in TEST_CLIENT_PORTS
+
+
+def client_key(req):
+    # Address plus the server address the client talks to: test clients on this machine share 127.0.0.1.
+    return req.get("peer"), req["base"]
+
+
 def from_host(req):
-    return req.get("peer") is None or req["peer"] in HOST_PEERS
+    return (req.get("peer") is None or req["peer"] in HOST_PEERS) and not test_client(req)
 
 
 @route("GET", r"^/dev/battle/members/$")
@@ -717,8 +732,8 @@ DEV_COMMANDS_DIR = Path(__file__).resolve().parent
 @route("GET", r"^/dev/commands/$")
 def dev_commands(req):
     # Polled by client_patch/dustdevhook.py; the client runs the commands once per new revision.
-    # A second client talks to port 8081 (multiplayer test) and gets dev_commands_8081.json.
-    second_client = req["base"].endswith(":8081")
+    # Test clients on this machine talk to ports 8081+ (TEST_CLIENT_PORTS) and get dev_commands_8081.json.
+    second_client = test_client(req)
     if not second_client and not from_host(req):
         return {"revision": 0, "commands": []}  # a player's client, not the host (see HOST_PEERS)
     path = DEV_COMMANDS_DIR / ("dev_commands_8081.json" if second_client else "dev_commands.json")

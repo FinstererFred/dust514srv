@@ -4,6 +4,7 @@ in a tight loop (every change is one engine tick), plus CPU time per RPCS3 threa
     python tools/host_tick.py --seconds 30 --label "ambush host only" --players 1
     python tools/host_tick.py --exe D:\\rpcs3_b\\rpcs3.exe --seconds 10
 
+num_players is GameInfo.NumPlayers (via WorldInfo.Game) at start and end of the run.
 Results go to stdout and, with --log, as one JSON line per run into dust_server/logs/host_tick.jsonl.
 
 The WorldInfo is found by its vtable (DustWorldInfo, EBOOT 0319: 0x01998b10). The heap holds stale copies from
@@ -24,6 +25,7 @@ import psutil
 
 VTABLE_WORLDINFO = 0x01998B10
 OFF_DILATION, OFF_TIME = 0x454, 0x45C          # TimeSeconds, RealTimeSeconds, AudioTimeSeconds, DeltaSeconds follow
+OFF_GAME, OFF_NUMPLAYERS = 0x4DC, 0x228         # WorldInfo.Game, GameInfo.NumPlayers
 GUEST_BASE = 0x300000000                        # RPCS3 default (manifest of live_dump.py)
 HEAP = (0x30000000, 0x50000000)
 
@@ -66,6 +68,10 @@ class Guest:
 
     def times(self, wi):
         return struct.unpack(">4f", self.read(wi + OFF_TIME, 16))     # time, real time, audio time, delta
+
+    def num_players(self, wi):
+        game = struct.unpack(">I", self.read(wi + OFF_GAME, 4))[0]
+        return struct.unpack(">i", self.read(game + OFF_NUMPLAYERS, 4))[0] if game else None
 
 
 def find_worldinfo(g):
@@ -126,6 +132,7 @@ def main():
     wi = args.worldinfo or find_worldinfo(g)
 
     names = thread_names(pid)
+    players0 = g.num_players(wi)
     cpu0 = {t.id: t.user_time + t.system_time for t in proc.threads()}
     proc_cpu0 = proc.cpu_times()
     ticks, last_rt = [], g.times(wi)[1]
@@ -148,7 +155,8 @@ def main():
     span = ticks[-1][0] - ticks[0][0]
     threads = sorted(((cpu1[i] - cpu0.get(i, 0)) / wall * 100, names.get(i, str(i))) for i in cpu1)[::-1]
     result = {
-        "time": time.strftime("%Y-%m-%dT%H:%M:%S"), "label": args.label, "players": args.players, "pid": pid,
+        "time": time.strftime("%Y-%m-%dT%H:%M:%S"), "label": args.label, "players": args.players,
+        "num_players": [players0, g.num_players(wi)], "pid": pid,
         "worldinfo": hex(wi), "seconds": round(wall, 1), "ticks": len(ticks),
         "tick_hz": round((len(ticks) - 1) / span, 2),
         "interval_ms": {"mean": round(statistics.mean(intervals), 1), "p50": round(pct(intervals, .5), 1),
