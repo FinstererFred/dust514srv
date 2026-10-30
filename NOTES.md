@@ -193,3 +193,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 - Wie teuer sind aktive Spieler (Laufen, Schießen) im Vergleich zu untätigen Pawns?
 - Ab wie vielen Clients lohnt ein zweiter PC, damit die CPU-Konkurrenz die Messung nicht verfälscht?
 - Wie lassen sich headless Clients mit Eingabe-Wiedergabe betreiben (Pad-Eingaben in RPCS3 skripten)?
+- **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
+  sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
+  Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),
+  ist aber gemeinsam für alle, nach einem Neustart weg und vergibt beim ersten POST ID 101 doppelt. Offen sind drei Punkte:
+  Bietet der Fitting-Bildschirm Fahrzeuge an? Liefert der Listen-Server das RDV aus? In welchen Modi gibt es Fahrzeuge
+  (vermutlich Skirmish/Domination, nicht Ambush)? Erster Versuch im Spiel, sonst fertige Fittings vom Server
+  (`content/fittings.json`, Vorgriff auf Stufe 5).
