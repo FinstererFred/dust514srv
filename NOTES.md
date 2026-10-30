@@ -65,6 +65,10 @@
   2/3 Spieler (Clients noch im Deploy-Bildschirm): 55,5/57,1 laufend, 59,0/59,2 angehalten. Funktionstest bestanden: Kollision
   fern vom Host in Ordnung (Nutzer lief herum), Treffer zwischen zwei Clients verschiedener Teams kommen an, Client c hat
   Client b getötet.
+  Mit 5 Spielern, davon 4 gespawnt und untätig (vom Nutzer deployt, Teams 1/0/1/0): **57,4 Ticks/s** laufend (p95 22,8 ms,
+  max 78,9 ms), 59,4 angehalten (p95 20,6 ms). Vorher ohne Patch: 22,6 bzw. 26,5. `main_thread` 60–76 %, `RenderingThread`
+  75–85 %, `rsx::thread` 69–77 %, Prozess 483–505 %, RSS 2,37 GB. Der Host liegt damit am Frame-Limit (PS3 Native ≈ 60);
+  wie viel Luft darüber bleibt, zeigt erst ein Lauf mit Frame limit Off.
 - **Teams automatisch:** `listen_team: "auto"` in `fake_battle.json` verteilt Beitretende abwechselnd (erster → Verteidiger,
   `Team=1`; zweiter → Angreifer, `Team=0`). Nachbeitritte zählen als neue Mitglieder, das ist also nur grob ausgeglichen.
   `dust_server/dev_once.py` schickt einzelne Konsolenbefehle an den laufenden Host, ohne die Karte neu zu starten.
