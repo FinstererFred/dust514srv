@@ -449,7 +449,13 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   kopieren, Slot setzen/leeren, umbenennen, löschen, fremdes Fitting 404; ISK-Kauf mit Benachrichtigungen, zu wenig ISK
   403, unbekannter Typ 404; AUR-Kauf 1000 → 975, Betrag falsch 409; LP-Kauf 5000 → 1000 plus ISK, zu wenig LP 403;
   Respec verbraucht das Item; Skillbuch ohne Item abgelehnt, mit Item gelernt und verbraucht. Parität ohne Schalter
-  identisch (26 Anfragen). **In RPCS3 noch offen.**
+  identisch (26 Anfragen).
+  **RPCS3 (2026-10-30, Client b, DustTester2, eigener Charakter):** ISK-Käufe gehen (Popup schließt, Inventar aktualisiert).
+  Neues Fitting im Fitting-Menü trennte zuerst: leere Slots kamen als `module: {id: None}`, `fitting._InitSlotsInfo` setzt
+  nur bei fehlendem Schlüssel `TYPEID_NONE` (-1), `None` → `stims.FitModule` RuntimeError (auch beim Spawn über
+  `GetDefaultFittingString`). Fix: leere Slots ohne `module`, Slots ohne Standard ohne `defaultModule`. Danach neues
+  Dropsuit-Fitting angelegt, ohne Fehler. Folge: Ein Slot mit Standardmodul lässt sich nicht leeren (der Client setzt
+  dann das Standardmodul). Noch offen in RPCS3: AUR- und LP-Kauf, Skillbuch/Respec verbrauchen, Fitting im Gefecht.
 
 ## Hypothesen
 
