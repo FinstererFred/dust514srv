@@ -494,6 +494,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Zweiter falscher Import (`from svcmgr import GetUnrealService`) → unbehandelte Ausnahme, Host vom Netz getrennt. Fix:
   `svcmgr` aus dem Modul von `battleServer`, Matchende komplett in try/except, Abgänge aus der Mitgliederliste nehmen.
   Der zweite Beitritt von 2100100003 (Credential ungebucht) verlor dadurch nichts.
+  **Matchende in RPCS3 bestätigt (2026-10-30, zweiter Lauf):** `SetWinner 1 0` → `OnBattleServerStoppedFromUnreal` →
+  `GetEndOfMatchPlayerInfoList()` liefert `[{'characteruri', 'warpoints'}]` je Spieler (auch der Host) →
+  `POST /dev/battle/completed/` → Buchung (hier 0 SP/0 ISK: nur ~15 s im Gefecht, `min_seconds` 60) →
+  `OnEndOfMatchResults` per `InvokeSvcMethodOnClientAsync` kommt an, Client b öffnet `endOfMatch2`. Klonverluste 0/0
+  (keine Tode). Beim Host-Spieler fehlte `dustClient.endOfMatchResults` (wird nur beim Beitritt gesetzt), Hook legt es
+  jetzt an (beim nächsten Host-Start aktiv). Offen: Belohnung > 0 mit Spielzeit ≥ 60 s, Rückkehr in die Merc Quarters.
 
 ## Hypothesen
 

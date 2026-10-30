@@ -206,7 +206,10 @@ def _ListenCompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesL
         log.info('end of match results for %s: %r', member['characterID'], result)
         try:
             if str(member['characterID']) == str(_state.get('hostCharID')):
-                self.app.GetService('dustClient').OnEndOfMatchResults(result)
+                dustClient = self.app.GetService('dustClient')
+                if not hasattr(dustClient, 'endOfMatchResults'):
+                    dustClient.endOfMatchResults = {}  # set when a client joins a battle, which the host never does
+                dustClient.OnEndOfMatchResults(result)
             else:
                 self.InvokeSvcMethodOnClientAsync(member['characterID'], 'dustClient', 'OnEndOfMatchResults', result)
         except Exception:
