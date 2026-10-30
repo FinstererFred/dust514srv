@@ -266,6 +266,14 @@ Ziel: Im Listen-Server-Gefecht gelten die Skills des Spielers statt „alles Stu
 5. **Folge:** Der Host prüft beim Spawn Fitting gegen Skills – ein Fitting ohne passende Skills lässt sich dann nicht
    mehr spawnen. Das ist gewollt, muss aber zu den Fittings des Clients passen (siehe Stufe 5).
 
+**Umsetzung (2026-10-30), Punkte 1–3 und 5:** `crest_app.battle_character` hängt bei eigenen Charakteren (`CHAR_STORE`)
+Name, Rasse, Corp, Geschlecht, `crestCharacterID` und `skills` an das Mitglied, `dustdevhook._BattleSkills` setzt sie auf dem
+Host. Die Gefechts-IDs bleiben im Offline-Bereich (Punkt 4 nicht umgesetzt), Inventar 999× und das Standard-Fitting bleiben
+also. Abweichung: Punkt 2 entfällt, der Host bleibt laut Offener Frage 1 ein Offline-Charakter mit „alles Stufe 5“. Weil die
+IDs umlaufen, bekommt ein Mitglied ohne Skills (Offline-Charakter, Fake-Client) den Stand von `OfflineConnect` zurück. Fund:
+`OfflineConnect` gibt `_pystims` nie Skills (leerer `skillDataCache`), Offline-Spieler kämpfen also ohne Skill-Boni, eigene
+Charaktere jetzt mit ihren echten. Nur im Prozess geprüft, in RPCS3 offen.
+
 **Prüfen:** Client 2 mit einem Charakter ohne z. B. Schwere-Dropsuit-Skill → Fitting wird abgelehnt bzw.
 Werte (Schild/Panzerung) entsprechen den Skills; `client.log` des Hosts zeigt „skills updated for character“.
 

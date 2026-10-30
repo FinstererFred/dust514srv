@@ -7,7 +7,8 @@ import sys
 
 log = logging.getLogger('dustdevhook')
 POLL_SECONDS = 3
-_state = {'polling': False, 'revision': None, 'battleServer': False, 'members': set(), 'hostSpawns': 0}
+_state = {'polling': False, 'revision': None, 'battleServer': False, 'members': set(), 'hostSpawns': 0,
+          'offlineSkills': {}}
 
 
 def _InitBattleServices(svc, arg):
@@ -35,7 +36,8 @@ def _BattleMember(svc, arg):
     # battleServer._MemberJoinedBattle does for the backend's member notification, but without CREST
     # lookups. The joining client then connects with CleanLoad <host>:7777?credential=<credential>.
     # {"credential": "...", "characterID": 2100001612, "characterURI": "...", "name": "...", "team": 1,
-    #  "host": true for the listen-server host's own player}
+    #  "host": true for the listen-server host's own player; own characters also raceID, corporationID,
+    #  corporationName, gender and "skills": [[typeID, level], ...]}
     from dust.battleServer import BattleCharacterCache
     character = BattleCharacterCache()
     character.credential = arg['credential']
@@ -52,6 +54,34 @@ def _BattleMember(svc, arg):
     svc.app.GetService('battleServer').characterCaches[arg['characterURI']] = character
     if arg.get('host'):
         _state['hostCharID'] = arg['characterID']
+    try:
+        _BattleSkills(svc, arg)
+    except Exception:
+        log.exception('battle skills failed for %s', arg['characterID'])
+
+
+def _BattleSkills(svc, arg):
+    # A player's own skills ("skills": [[typeID, level], ...]) replace the all-level-5 skills OfflineConnect gave
+    # the battle ID, the way skillBattle.OnPreCharacterConnectNotification does from CREST. Battle IDs are reused,
+    # so a member without skills (CCP's offline characters, fake clients) gets OfflineConnect's state back: all
+    # level 5 for the fitting check and an empty data cache, i.e. no skill bonuses in _pystims.
+    from dust import skillModuleFactory
+    skillBattle = svc.app.GetService('skillBattle')
+    charID = arg['characterID']
+    if 'skills' in arg:
+        _state['offlineSkills'].setdefault(charID, skillBattle.knownSkills.get(charID))
+        skillBattle.knownSkills[charID] = [
+            {'skillTypeID': int(typeID), 'skillLevel': int(level), 'skillName': '',
+             'href': '%s/skills/%s/' % (arg['characterURI'].rstrip('/'), typeID)}
+            for typeID, level in arg['skills']]
+        skillBattle._UpdateDataCache(charID)
+        log.info('skills updated for character %s (%s): %s skills', charID, arg.get('name'), len(arg['skills']))
+    elif charID in _state['offlineSkills']:
+        skillBattle.knownSkills[charID] = _state['offlineSkills'].pop(charID)
+        skillBattle.skillDataCache[charID] = skillModuleFactory.SkillDataCache()
+        import _pystims
+        _pystims.UpdateSkills(charID, {})
+        log.info('offline skills restored for character %s', charID)
 
 
 def _Call(svc, arg):

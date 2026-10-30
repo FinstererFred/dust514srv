@@ -418,6 +418,19 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     `/corporations/1000251/members/{id}/` kommt von CCPs Offline-Handler und verlinkt die Rollen unter 1000205.
     Noch offen: erster Login eines neuen Kontos ohne Charakter (drei leere Plätze).
 
+- **Stufe 4, echte Skills im Gefecht (2026-10-30), hinter dem Schalter:** Beim Beitritt (`POST /battles/{id}/members/`) mit
+  eigenem Charakter liefert `/dev/battle/members/` zusätzlich Name, Rasse, Corp, Geschlecht, `crestCharacterID` und
+  `skills: [[typeID, level], …]`. Der Dev-Hook des Hosts setzt `skillBattle.knownSkills[ID]` und ruft `_UpdateDataCache` (→
+  `_pystims.UpdateSkills`), Log „skills updated for character“. Funde im Client-Code:
+  - `userBattle.OfflineConnect` setzt für die 100 Offline-IDs alle Skills auf 5, legt aber nur einen **leeren**
+    `skillDataCache` an und ruft `_pystims.UpdateSkills` nie. Fitting-Prüfung (`CharacterHasSkillsForTypeUE3`) sieht also
+    Stufe 5, die Werte-Berechnung (`ue3Context.GetRelevantSkills`) keine Skills. Bisher kämpfte also jeder ohne Skill-Boni.
+  - Gefechts-IDs laufen um. Ein späteres Mitglied ohne Skills auf derselben ID bekommt den `OfflineConnect`-Stand zurück.
+  Im Prozess geprüft (Wegwerf-DB, Minmatar-Charakter: 8 Start-Skills, Brutor Vanguard; fremder Token und Offline-ID → keine
+  Skills), Hook mit py27 kompiliert, `COMMON.SDAT` von `D:\rpcs3` neu gepatcht. **In RPCS3 offen:** Client 2 mit eigenem
+  Charakter beitreten, Host-`client.log` auf „skills updated“ prüfen, Spawn mit einem Fitting ohne passende Skills (sollte
+  abgelehnt werden), Schild/Panzerung im Gefecht. Docker: `export_host_data.ps1` erneut ausführen.
+
 ## Hypothesen
 
 - **Host rendert trotz Weltrendering-Patch weiter (2026-10-30):** Host, 2 Spieler, 84 Ticks/s: RenderingThread 81 %, main_thread

@@ -1093,7 +1093,7 @@ def join_battle(req):
             with LISTEN_LOCK:
                 team = ("defender", "attacker")[len(LISTEN_MEMBERS) % 2]
         member["team"] = team
-        listen_member = register_listen_member(req, config, team)
+        listen_member = register_listen_member(req, config, team, battle_character(req, character_id))
         credential = listen_member["credential"]
     target = config[{"localmap": "target_localmap", "listen": "target_listen"}.get(config["variant"], "target_probe")]
     connect = {**member, "credential": credential, "server": {"address": target["address"], "port": target["port"]}}
@@ -1123,13 +1123,35 @@ LISTEN_CONNECT_DELAY = 2.0  # the host registers right after its poll returns
 OFFLINE_CHARACTERS_END = 2100001611 + 100      # userBattle.STARTING_OFFLINE_CHARID + NUM_OFFLINE_PLAYERS
 
 
-def register_listen_member(req, config, team):
+def battle_character(req, char_id):
+    """The joining player's own character (CHAR_STORE) as the host's dev hook needs it, or None (CCP's offline
+    characters, fake clients): name, race, corporation, gender and the skills as [[typeID, level], ...]."""
+    try:
+        char = own_character(req, char_id or 0, private=True)
+    except CharacterMissing:
+        print(f"battle: join with character {char_id} that is not the caller's, offline skills", flush=True)
+        return None
+    if not char:
+        return None
+    return {
+        "crestCharacterID": char["id"],
+        "name": char["name"],
+        "raceID": char["race_id"],
+        "corporationID": char["corporation_id"],
+        "corporationName": characters.NPC_CORPORATION_NAMES.get(char["corporation_id"], "Amarr Templars"),
+        "gender": char["gender"],
+        "skills": sorted([type_id, level] for type_id, level in store.get().skills_of(char["id"]).items()),
+    }
+
+
+def register_listen_member(req, config, team, character=None):
     # Every player needs its own battle character ID and URI: DustTeamGame.Login (credential branch,
     # ?battleID=) takes them from the host's battleServer, whose cache is keyed by URI. All local players
     # share CCP's offline characters, so neither the CREST character nor the user tells them apart.
     # The host itself uses first_member_id - 1. Only CCP's offline characters 2100001611 to 2100001710 get an
     # inventory, skills and a fitting (userBattle.OfflineConnect, NUM_OFFLINE_PLAYERS = 100); for a later ID the
     # host's fitting check fails (inventory None) and the pawn spawns without a weapon. So the IDs wrap around.
+    # `character` (battle_character) replaces the name and the all-level-5 skills of that battle ID on the host.
     with LISTEN_LOCK:
         first = config.get("first_member_id", 2100001612)
         character_id = first + len(LISTEN_MEMBERS) % (OFFLINE_CHARACTERS_END - first)
@@ -1139,8 +1161,12 @@ def register_listen_member(req, config, team):
             "characterURI": f"{req['base']}/battlecharacters/{character_id}/",
             "name": f"Mercenary {len(LISTEN_MEMBERS) + 2}",
             "team": {"attacker": 0, "defender": 1}[team],
+            **(character or {}),
         }
         LISTEN_MEMBERS.append(member)
+        if character:
+            print(f"battle: character {character['crestCharacterID']} joins as {character_id} with "
+                  f"{len(character['skills'])} skills", flush=True)
         return member
 
 
