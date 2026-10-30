@@ -455,7 +455,9 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   nur bei fehlendem Schlüssel `TYPEID_NONE` (-1), `None` → `stims.FitModule` RuntimeError (auch beim Spawn über
   `GetDefaultFittingString`). Fix: leere Slots ohne `module`, Slots ohne Standard ohne `defaultModule`. Danach neues
   Dropsuit-Fitting angelegt, ohne Fehler. Folge: Ein Slot mit Standardmodul lässt sich nicht leeren (der Client setzt
-  dann das Standardmodul). Noch offen in RPCS3: AUR- und LP-Kauf, Skillbuch/Respec verbrauchen, Fitting im Gefecht.
+  dann das Standardmodul). AUR-Kauf bestätigt (DustTester2 per DB auf 5000 AUR, 356040 für 1280 AUR, Stand 3720,
+  Popup schließt). Ohne eigenen Wert gilt `wallet.json` (Standard 0 AUR), dann blockt schon der Client („insufficient
+  AUR“). Noch offen in RPCS3: LP-Kauf, Skillbuch/Respec verbrauchen, Fitting im Gefecht.
 
 ## Hypothesen
 
