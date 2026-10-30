@@ -1,0 +1,34 @@
+# Listen-Host: schnellere Prüfung „hat der Client das Level dieses Objekts geladen?“ (Entwurf 2026-10-30).
+# Nur in die Patch-Datei des HOSTS eintragen (D:\rpcs3\patches\NPUB30643_patch.yml bzw. Docker-Host).
+#
+# PPU-Profil mit 16 feuernden Fake-Clients (NOTES.md, tools/ppu_profile.py): 18 % des Mehraufwands pro Spieler liegen in
+# FUN_005ea628, nach Aufbau UNetConnection::ClientHasInitializedLevelFor. Für ein Objekt in einem Sublevel sucht sie
+# dessen FName (Index, Number) linear in ClientVisibleLevelNames (TArray<FName>, Connection+0x5060 Daten, +0x5064
+# Anzahl), pro Actor und Verbindung, bei ~168 gemeldeten Levels pro Client. Die Liste pflegt nur
+# ServerUpdateLevelVisibility (0x25d7f8 ff.: einfügen falls neu, löschen nach Wert), ihre Reihenfolge ist bedeutungslos.
+#
+# Der Patch tauscht einen Treffer mit dem ersten Eintrag (Move-to-Front). Der Server geht die Actors eines Levels am
+# Stück durch, die nächste Suche endet dann meist beim ersten Eintrag. Passt in die Trefferstelle, keine Code-Höhle:
+#   0x005ea770  7c64f810 subf r3,r4,r31     ->  e8640000 ld  r3,0(r4)    erster Eintrag (Index und Number)
+#   0x005ea774  7c631e70 srawi r3,r3,3      ->  e8df0000 ld  r6,0(r31)   Treffer (r6 = Listenende, danach unbenutzt)
+#   0x005ea778  7c630194 addze r3,r3        ->  f8c40000 std r6,0(r4)
+#   0x005ea77c  2c03ffff cmpwi r3,-1        ->  f87f0000 std r3,0(r31)
+#   0x005ea780  40820018 bne 0x5ea798       ->  48000018 b   0x5ea798    li r30,1 -> return 1
+# Die ersetzte Indexprüfung (Index != -1) ist bei einem Treffer immer wahr.
+
+Version: 1.2
+
+PPU-ae3f946dfcb103b782f73f1cc5f90587e652f439:
+  "Listen host: level visibility move-to-front":
+    Games:
+      "DUST 514":
+        NPUB30643: [ 03.19 ]
+    Author: "Dust 514 RPCS3 research"
+    Patch Version: 0.1
+    Notes: "Host only. ClientHasInitializedLevelFor moves a found level name to the front of the connection's ClientVisibleLevelNames, so the linear search per actor and connection usually stops at the first entry."
+    Patch:
+      - [ be32, 0x005ea770, 0xe8640000 ] # ld r3,0(r4) (was subf r3,r4,r31)
+      - [ be32, 0x005ea774, 0xe8df0000 ] # ld r6,0(r31) (was srawi r3,r3,3)
+      - [ be32, 0x005ea778, 0xf8c40000 ] # std r6,0(r4) (was addze r3,r3)
+      - [ be32, 0x005ea77c, 0xf87f0000 ] # std r3,0(r31) (was cmpwi r3,-1)
+      - [ be32, 0x005ea780, 0x48000018 ] # b 0x5ea798 (was bne 0x5ea798)

@@ -28,7 +28,30 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
-- **PPU-Profil des Game-Threads, 16 feuernde Fake-Clients gegen 0 (2026-10-30, `tools/ppu_profile.py`):** RPCS3-Option
+- **Fake-Clients meldeten falsche Level-Namen, korrigiert (2026-10-30):** Mess-Patch mit Zählern in
+  `ClientHasInitializedLevelFor` (FUN_005ea628): mit 16 Fake-Clients ~100 000 Suchen/s in `ClientVisibleLevelNames`,
+  0,0 % Treffer. Vergleich im Host-Speicher (PlayerController+0x2f0 → UNetConnection, Liste +0x5060, Weltname +0x5058,
+  bei allen korrekt): echter Client 62 von 64 Namen bekannt, Fake-Client 20 von 158. Outpost-Level sind instanziert
+  (`CS_GA_SecScan01S_LOD0_3`, `_4`, …); die Nummer ist die Instanz des Hosts, nicht der Kanal. Folge: Der Host hielt bei
+  Fake-Clients fast alle Outpost-Level für nicht geladen (keine Replikation ihrer Actors, jede Prüfung scannt die ganze
+  Liste). Echte Clients melden die vollen Level (`X`, `X+AU`) nur für das Outpost in ihrer Nähe.
+  Fix: `tools/host_levels.py` liest die Streaming-Level des Hosts (179 auf MN_Craters01) nach
+  `research/levels/<Welt>.json`, `fake_client.py` meldet diese (`--levels`, automatisch bei genau einer Datei;
+  `--full-levels all|none`). Danach 100 % Treffer und nur noch Dutzende Suchen/s. Neue Messung (frischer Host, volle
+  Level für alle Outposts gemeldet, also eher mehr Last als echte Clients):
+
+  | Clients | vorher (falsche Namen) | korrigiert | korrigiert + Move-to-Front |
+  |---|---|---|---|
+  | 16 | 39,3 | 45,4 | 46,9 |
+  | 32 | 16,6 | 18,3 | 15,95 |
+
+  Der 18-%-Hotspot im PPU-Profil war ein Artefakt der falschen Namen. Move-to-Front
+  (`rpcs3_patches/host_level_visibility_mtf.yml`) bringt nichts Messbares und ist nicht installiert; nach dem 32er-Lauf
+  damit war der Host beendet (Ursache unbekannt, Log überschrieben). Streuung zwischen 32er-Läufen ~±10 %.
+  Nach einem Host-Neustart fragt der Host die Mitgliederliste erst ~30–60 s nach dem Laden ab; früher gestartete
+  Fake-Clients scheitern mit `InvalidCredential` (Messläufe warten auf das zweite `GET /dev/battle/members/`).
+- **PPU-Profil des Game-Threads, 16 feuernde Fake-Clients gegen 0 (2026-10-30, `tools/ppu_profile.py`; noch mit falschen
+  Level-Namen der Fake-Clients, der Level-Such-Hotspot ist ein Artefakt, siehe oben):** RPCS3-Option
   `PPU Profiler: true`, je Lauf Boot + ~160 s Gefecht, mit Clients davon ~130 s mit 16 feuernden Clients; Host über
   `CloseMainWindow` beendet (nur dann schreibt RPCS3 das Profil). Rohdaten in `research/profiles/prof_{0,16}.log`.
   main_thread: 112 450 → 161 977 Samples mit Gastcode (+49 527 ≈ 37 s von ~130 s), „idle“ (Wartezeit in Syscalls)
@@ -53,7 +76,7 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
   Die Mehrkosten pro Spieler sind fast ausschließlich Gastcode. sys_net und der übrige RPCS3-Kernel kosten zusammen
   unter 10 %. Ohne Clients wartet main_thread die Hälfte der Zeit (Bildtakt/RenderingThread), mit 16 Clients kaum noch.
-  Folgerung: Hebel sind Patches am Gastcode (Level-Suche oben, dann Octree/TMap) oder schnellere PPU-Ausführung
+  Folgerung: Hebel sind Patches am Gastcode (Octree/TMap; die Level-Suche war ein Artefakt) oder schnellere PPU-Ausführung
   (Recompiler), nicht RPCS3-Syscalls. Kernelzeit (21 %) ist größtenteils Overhead des Samplers (Suspend/Resume).
 - **Heap im emulierten Speicher bei 16 und 32 Spielern (2026-10-30, `tools/vm_footprint.py`):** UE3 legt seinen Heap in einen
   `sys_vm`-Bereich (`sys_vm_memory_map vsize=0x10000000 psize=0x9200000` ab 0x40000000, also 256 MB virtuell, 146 MB physisch).
@@ -75,7 +98,8 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   des Heaps (`sys_memory_get_user_memory_size`) liegt bei 4–11 MB frei von 213 MB und wächst nicht mit Spielern
   (nur 14 `sys_memory_allocate`, alle beim Start). Für 32 Spieler ist der Speicher damit keine harte Grenze, der
   Game-Thread schon.
-- **16 und 32 feuernde Fake-Clients (2026-10-30, frischer Host, alle mit Waffe):** Host `D:\rpcs3` Null-Renderer, `-novsync`,
+- **16 und 32 feuernde Fake-Clients (2026-10-30, frischer Host, alle mit Waffe; noch mit falschen Level-Namen, korrigierte
+  Werte oben):** Host `D:\rpcs3` Null-Renderer, `-novsync`,
   Clients `--play --fitting assault --fire-interval 5 --fire-burst 2`, 30 s `host_tick.py`:
 
   | Clients | Ticks/s | Mittel / p95 / max (ms) | main_thread | RSS rpcs3 | Host-Pawns |

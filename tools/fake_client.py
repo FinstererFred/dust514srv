@@ -192,8 +192,13 @@ class Levels:
     - every district structure: the open bunch of its socket actor names the socket (Small38, OP03, BackDrop01, ...)
       and then the structure (CS_GA_PowCore01S ...), in full or as a cache reference. Reported as <structure>_LOD0
       (backdrops without _LOD0) with FName number = the socket's actor channel; once the host asks the client to
-      stream around the spawn point (ClientStartCheckStreaming), also <structure> and <structure>+AU."""
-    def __init__(self):
+      stream around the spawn point (ClientStartCheckStreaming), also <structure> and <structure>+AU.
+    The FName numbers derived from channels match only a few of the host's level instances (20 of 158 on MN_Craters01),
+    so the host treated most outpost levels as not loaded (no replication of their actors, a full linear search of the
+    connection's level list per check). With --levels (tools/host_levels.py) the structure levels come from the host's
+    own list instead: every _LOD0 proxy, MOOD_ and CB_ level at once, the full levels and +AU after
+    ClientStartCheckStreaming (all of them with --full-levels all, none with none)."""
+    def __init__(self, host_levels=None, full_levels="all"):
         self.cache = {}                             # host's name cache: id -> text
         self.map_levels = []
         self.structures = {}                        # socket channel -> structure name (or MOOD_ level)
@@ -201,6 +206,8 @@ class Levels:
         self.reported = set()
         self.next_id = 0x401                        # our own name cache
         self.channels = {}                          # archetype -> our latest actor channel of it (ACTOR_RPCS)
+        self.host_levels = [tuple(l) for l in host_levels or [] if not l[0].startswith("MN_")]
+        self.full_levels = full_levels
 
     def scan_controller(self, data):
         value = int.from_bytes(data, "little")
@@ -235,6 +242,10 @@ class Levels:
 
     def wanted(self):
         out = [(text, 0) for text in self.map_levels]
+        if self.host_levels:
+            proxy = [l for l in self.host_levels if "_LOD0" in l[0] or l[0].startswith(("MOOD_", "CB_"))]
+            full = [l for l in self.host_levels if l not in proxy]
+            return out + proxy + (full if self.near_spawn and self.full_levels == "all" else [])
         for channel, name in sorted(self.structures.items()):
             if name.startswith(("MOOD_", "CB_")):
                 out.append((name, channel))
@@ -266,7 +277,7 @@ class Player:
         self.next_move = joined
         self.heading = random.uniform(0, 2 * math.pi)
         self.next_turn = 0.0
-        self.levels = Levels()
+        self.levels = Levels(args.host_levels, args.full_levels)
         self.streamed = False                       # ServerOnStreamingFinished sent for this spawn
         self.next_levels = joined + 1.0             # let the first channel opens arrive
         self.armed = False                          # weapon selected for the current pawn
@@ -438,7 +449,14 @@ def main():
     ap.add_argument("--fire-interval", type=float, default=0, help="seconds between bursts once armed (0: no firing)")
     ap.add_argument("--fire-burst", type=float, default=1.5, help="seconds the trigger stays down per burst")
     ap.add_argument("--fitting", choices=sorted(FITTINGS), default="heavy")
+    ap.add_argument("--levels", help="level list of the host's map from tools/host_levels.py (default: "
+                                     "research/levels/*.json if there is exactly one)")
+    ap.add_argument("--full-levels", choices=["all", "none"], default="all",
+                    help="with --levels: report the full outpost levels and +AU after ClientStartCheckStreaming")
     args = ap.parse_args()
+    level_files = [args.levels] if args.levels else sorted((Path(__file__).resolve().parent.parent / "research" /
+                                                            "levels").glob("*.json"))
+    args.host_levels = json.loads(Path(level_files[0]).read_text())["levels"] if len(level_files) == 1 else None
 
     replay = load_replay(args.replay, {int(c) for c in args.replay_channels.split(",")}) if args.replay else []
     if args.replay_skip:
