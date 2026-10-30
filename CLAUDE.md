@@ -47,12 +47,18 @@ daher dient der Listen-Server-Pfad des Retail-Clients (RPCS3) als Gefechtsserver
 
 ## Nächste Schritte
 
-1. **Skalierung messen:** 2 → 4 → 8 → 16 → 32 Clients (FPS, Tick, RAM, CPU je Thread, Netzlast). Dafür echte Clients oder mehrere Instanzen.
-2. **Fallstelle prüfen** (153509, 41800) und Kollision mit mehr als 2 Spielern bestätigen. Offene Funktionen: `FUN_007f9b54`, `FUN_007f7b0c`.
-3. **Matchende und Belohnungen** im CREST-Server (`POST battle.completed`, `member.completed`), Rückkehr in die Merc Quarters.
-4. **Docker-Dauerbetrieb:** Watchdog, Neustart des Hosts pro Match (ein Moduswechsel im laufenden Host stürzt ab), Instanzen pro Maschine.
-5. Offene Modi: Acquisition (Startposition), Ambush OMS (ungetestet).
-6. Warroom-Karte testweise als Vorphase laden.
-7. **Erst nach Schritt 1 entscheiden:** Reicht RPCS3 für 32 Spieler? Falls nicht, ist ein statischer Recompiler (ps3recomp,
+1. **Harte Grenzen prüfen (vor dem Messen, Ghidra):** Spielerobergrenze im Binary (MaxPlayers/MaxClients im NetDriver, Größe der
+   Verbindungs-Arrays), Socket-Limits in `sys_net` bzw. RPCS3, Speicherbedarf pro Verbindung (Channels, Replikationsstate) im
+   emulierten 256-MB-Hauptspeicher. Ist 16 fest einkompiliert, zuerst das lösen.
+2. **Test-Harness für Schritt 3:** Ohne Bots gibt es keine 31 Mitspieler. Nötig sind headless Clients im Docker (Null-Renderer wie beim Host),
+   eine Eingabe-Wiedergabe (Laufen, Schießen; untätige Clients unterschätzen die Replikationslast), eine verlässliche Tick-Messung am
+   Host (FPS ≠ Server-Tick) und ein automatisierter Host-Start pro Messlauf (aus Schritt 6 vorgezogen).
+3. **Skalierung messen:** 2 → 4 → 8 → 16 → 32 Clients (FPS, Tick, RAM, CPU je Thread, Netzlast). Dafür echte Clients oder mehrere Instanzen.
+4. **Fallstelle prüfen** (153509, 41800) und Kollision mit mehr als 2 Spielern bestätigen. Offene Funktionen: `FUN_007f9b54`, `FUN_007f7b0c`.
+5. **Matchende und Belohnungen** im CREST-Server (`POST battle.completed`, `member.completed`), Rückkehr in die Merc Quarters.
+6. **Docker-Dauerbetrieb:** Watchdog, Neustart des Hosts pro Match (ein Moduswechsel im laufenden Host stürzt ab), Instanzen pro Maschine.
+7. Offene Modi: Acquisition (Startposition), Ambush OMS (ungetestet).
+8. Warroom-Karte testweise als Vorphase laden.
+9. **Erst nach Schritt 3 entscheiden:** Reicht RPCS3 für 32 Spieler? Falls nicht, ist ein statischer Recompiler (ps3recomp,
    github.com/sp00nznet/ps3recomp) eine mögliche Option, um die Tickrate zu verbessern. Er ist aber ein großer Aufwand: Alle bisherigen
    Referenzprojekte sind kleine Singleplayer-Spiele, und der Host braucht auch die SPU-Jobs. Bisher ist er nicht begonnen.
