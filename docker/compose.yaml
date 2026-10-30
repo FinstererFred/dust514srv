@@ -65,7 +65,7 @@ services:
     depends_on: [crest, rpcn]
     stop_grace_period: 30s
     environment:
-      HOST_GAME_ARGS: ${HOST_GAME_ARGS:--autologinserver=127.0.0.1:8080 -autologincharindex=0}
+      HOST_GAME_ARGS: ${HOST_GAME_ARGS:--autologinserver=127.0.0.1:8080 -autologincharindex=0 -novsync}
       STARTUP_GRACE: ${STARTUP_GRACE:-1200}
       HANG_TIMEOUT: ${HANG_TIMEOUT:-180}
       # restart when the game stops polling dust_server (/dev/host/heartbeat/) while RPCS3 keeps running

@@ -11,7 +11,7 @@ Before each start the watchdog waits until the RPCN server from rpcn.yml answers
 account there if it is missing (the game hangs at the PSN sign-in without it).
 
 Environment (defaults in brackets):
-  HOST_GAME_ARGS     arguments for the game  [-autologinserver=127.0.0.1:8080 -autologincharindex=0]
+  HOST_GAME_ARGS     arguments for the game  [-autologinserver=127.0.0.1:8080 -autologincharindex=0 -novsync]
   RPCS3_EXTRA_ARGS   extra RPCS3 options, e.g. "--stdout"  []
   CONTROL_DIR        restart/stop/status files  [/data/control]
   STARTUP_GRACE      seconds before hang detection starts (first boot compiles PPU/SPU caches)  [1200]
@@ -41,7 +41,7 @@ EBOOT = CONFIG_HOME / "dev_hdd0/game/NPUB30643/USRDIR/EBOOT.BIN"
 RPCS3_LOG = CACHE_HOME / "RPCS3.log"
 RPCN_CONFIG = CONFIG_HOME / "rpcn.yml"
 
-GAME_ARGS = os.environ.get("HOST_GAME_ARGS", "-autologinserver=127.0.0.1:8080 -autologincharindex=0")
+GAME_ARGS = os.environ.get("HOST_GAME_ARGS", "-autologinserver=127.0.0.1:8080 -autologincharindex=0 -novsync")
 EXTRA_ARGS = os.environ.get("RPCS3_EXTRA_ARGS", "")
 CONTROL_DIR = Path(os.environ.get("CONTROL_DIR", "/data/control"))
 STARTUP_GRACE = int(os.environ.get("STARTUP_GRACE", "1200"))

@@ -84,8 +84,12 @@
 
   Gespawnte untätige Pawns kosten ohne Weltrendering nur noch ~0,1 ms pro Tick (vorher ~1,5 ms); die frühere Pawn-Last war also
   fast ganz Rendering. Jetzt begrenzt der Game-Thread (fast ein voller Kern). Bei 30 Ticks/s Ziel bleiben rund 21 ms Reserve
-  pro Tick. Der Host-Start mit `-novsync` ist noch nicht dauerhaft eingetragen (`restart_host.ps1`, `set_host_mode.py`, Docker);
-  für den Betrieb wäre ein festes Limit sinnvoller als freies Laufen (CPU).
+  pro Tick.
+- **`-novsync` fest im Host-Start (2026-10-30):** `tools/restart_host.ps1`, `docker/host/watchdog.py`, `docker/compose.yaml`,
+  `docker/.env.example`. Eine lokale `docker/.env` mit eigenem `HOST_GAME_ARGS` überschreibt das und muss von Hand nachgezogen
+  werden. Host-Config (Windows) zurück auf `Frame limit: PS3 Native`; mit `-novsync` begrenzt das nicht mehr: 86,3 Ticks/s bei
+  5 verbundenen Spielern, Spielzeit 1:1. Freies Laufen kostet kaum CPU (Prozess 486 % gegen 480 % bei 60 Hz mit VSync), daher
+  vorerst ohne festes Limit. Vorteil gegenüber VSync: ein Tick über 16,7 ms wird nicht auf 30 oder 20 Hz abgerundet.
 - **Teams automatisch:** `listen_team: "auto"` in `fake_battle.json` verteilt Beitretende abwechselnd (erster → Verteidiger,
   `Team=1`; zweiter → Angreifer, `Team=0`). Nachbeitritte zählen als neue Mitglieder, das ist also nur grob ausgeglichen.
   `dust_server/dev_once.py` schickt einzelne Konsolenbefehle an den laufenden Host, ohne die Karte neu zu starten.
@@ -101,6 +105,10 @@
 - Untätige Test-Clients unterschätzen die Last am Host deutlich. Für aussagekräftige Messungen braucht es Bewegung und Schüsse.
 
 ## Ausprobiert
+
+- **`Frame limit: Auto` am Windows-Host (2026-10-30):** Host kam nur extrem langsam hoch (12–60 s zwischen den Login-Anfragen).
+  Bekannt: ohne den eigenen RPCS3-Build schläft der Null-Renderer bei Auto an jedem Flip (`handle_emu_flip`). Zurück auf
+  `PS3 Native`. `Vblank Rate: 120` hob die 60er-Grenze ebenfalls nicht (VSync wartet im Spiel), zurückgenommen.
 
 - **`restart_all` mit Null-Renderer-Host (2026-10-30):** Der Host blieb zweimal vor der Charakterauswahl hängen (nach
   `/dust/asset/bundle/offline` nur noch Keepalives). Nur den Host neu zu starten (`restart_host.ps1`) half jedes Mal. Für den
