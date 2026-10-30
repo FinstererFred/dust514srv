@@ -168,8 +168,8 @@ def save_host_settings(s, bump_revision):
     for key in ("map", "game_type", "game_mode_level", "terraform", "lighting", "host_name"):
         if not re.fullmatch(r"[A-Za-z0-9_.\-]+", str(s.get(key) or "")):
             raise ValueError(f"invalid value for {key}: {s.get(key)!r}")
-    if s.get("client_team") not in ("attacker", "defender"):
-        raise ValueError("client_team must be attacker or defender")
+    if s.get("client_team") not in ("attacker", "defender", "auto"):
+        raise ValueError("client_team must be attacker, defender or auto")
     with _file_lock:
         dev, battle = read_json(DEV_COMMANDS), read_json(FAKE_BATTLE)
         entry = start_command_entry(dev)
@@ -339,7 +339,10 @@ def clean_content(name, data):
         days = [{"sp": _int(d.get("sp", 0)), "aur": _int(d.get("aur", 0))} for d in data.get("daily_login", [])]
         if not 1 <= len(days) <= 31:
             raise ValueError("1 to 31 login days")
-        return {"daily_login": days}
+        battle = {**content.DEFAULTS["rewards"]["battle"], **(data.get("battle") or {})}
+        rates = {"sp_per_warpoint", "isk_per_warpoint"}
+        return {"daily_login": days, "battle": {k: float(v) if k in rates else _int(v) for k, v in battle.items()
+                                                if k in content.DEFAULTS["rewards"]["battle"]}}
     if name == "wallet":
         return {"isk": _int(data.get("isk", 0)), "aur": _int(data.get("aur", 0))}
     if name == "storefront":

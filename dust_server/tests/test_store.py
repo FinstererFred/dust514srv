@@ -163,5 +163,21 @@ class StoreTest(unittest.TestCase):
         self.store.set_lp(char["id"], 1000198, 3)
         self.assertEqual((self.store.lp(char["id"], 1000198, 7), self.store.lp(char["id"], 1000262, 7)), (3, 7))
 
+    def test_battle_booking(self):
+        char = self.char(self.store.user_for_online_id("x")["id"])
+        self.store.add_items(char["id"], {111: 2, 222: 1})
+        self.store.add_battle_member("cred1", 514001, 2100001612, char["id"], 0, now=1000.0)
+        changed, taken = self.store.complete_battle_member("cred1", 800, True, 1300, 140000, {111: 5, 333: 1},
+                                                           now=1000.0)
+        self.assertEqual(taken, {111: 2})  # never below 0, unknown types skipped
+        self.assertEqual([(c["type_id"], c["quantity"]) for c in changed], [(111, 0)])
+        after = self.store.character(char["id"])
+        self.assertEqual((after["sp_base"], after["isk"]), (501300, 25000 + 140000))
+        self.assertIsNone(self.store.complete_battle_member("cred1", 800, True, 1300, 140000, {}, now=1001.0))
+        self.assertIsNone(self.store.complete_battle_member("unknown", 0, None, 0, 0, {}))
+        self.assertEqual((self.store.battle_sp_since(char["id"], 1000.0), self.store.battle_sp_since(char["id"], 1000.5)),
+                         (1300, 0))
+
+
 if __name__ == "__main__":
     unittest.main()

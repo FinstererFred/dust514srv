@@ -610,10 +610,12 @@ def notify_character(char_id, name, body):
 def notify_skill_points(char_id):
     char = store.get().character(char_id)
     if char:
-        # skillClient.OnCharacterSkillPointChangeFromBackend; the weekly battle SP cap (stage 5) is not used yet.
+        # skillClient.OnCharacterSkillPointChangeFromBackend, with the weekly battle SP cap (stage 5b)
+        now = time.time()
         notify_character(char_id, "OnCharacterSkillPointChange", {
-            "totalSkillPoints": store.total_sp(char), "skillPointsPerDay": sp_per_day(char),
-            "skillPointsThisCycle": 0, "cycleCap": 0})
+            "totalSkillPoints": store.total_sp(char, now), "skillPointsPerDay": sp_per_day(char),
+            "skillPointsThisCycle": store.get().battle_sp_since(char_id, cycle_start(now)),
+            "cycleCap": battle_rules()["sp_cycle_cap"]})
 
 
 def notify_skill_changes(char_id, before, after):
@@ -1502,6 +1504,9 @@ def register_listen_member(req, config, team, character=None):
         if character:
             print(f"battle: character {character['crestCharacterID']} joins as {character_id} with "
                   f"{len(character['skills'])} skills", flush=True)
+            # Battle IDs wrap around and repeat across host restarts; the credential names one join (stage 5b).
+            store.get().add_battle_member(member["credential"], config["battle_id"], character_id,
+                                          character["crestCharacterID"], member["team"])
         return member
 
 
@@ -1568,6 +1573,117 @@ def host_heartbeat(req):
     # RPCS3 can keep running after the game's Python died (e.g. when this server was restarted).
     polls = [t for t in (server_status.HOST["last_poll"], server_status.HOST["last_members_poll"]) if t]
     return {"age": round(time.time() - max(polls), 1) if polls else None}
+
+
+# --- Stage 5b: end of match and rewards -------------------------------------------------------------------------
+# The host's dev hook replaces battleServer._CompleteBattle and _MemberLeftBattle (CCP's posts to battle.completed
+# and member.completed) with posts here, same payload plus each member's credential. We book SP, ISK and the
+# items lost in the battle per own character and answer with what CCP's battle server sent each client as
+# dustClient.OnEndOfMatchResults (the end-of-match screen waits for it). Players who leave early get no reward,
+# only their losses booked.
+
+TEAM_NAMES = {0: "attacker", 1: "defender"}  # battleServer.TEAMS
+
+
+def battle_rules():
+    return {**content.DEFAULTS["rewards"]["battle"], **(content.load("rewards").get("battle") or {})}
+
+
+def cycle_start(now):
+    """Start of the weekly SP cycle: Monday 00:00 UTC."""
+    day = datetime.datetime.fromtimestamp(now, datetime.timezone.utc).date()
+    monday = day - datetime.timedelta(days=day.weekday())
+    return datetime.datetime(monday.year, monday.month, monday.day, tzinfo=datetime.timezone.utc).timestamp()
+
+
+def battle_reward(rules, warpoints, won, duration):
+    """(SP before the weekly cap, ISK) for one member who played to the end."""
+    if duration < rules["min_seconds"]:
+        return 0, 0
+    sp = int(warpoints * rules["sp_per_warpoint"]) + (rules["sp_win"] if won else rules["sp_loss"])
+    isk = rules["isk_base"] + int(warpoints * rules["isk_per_warpoint"]) + (rules["isk_win"] if won else 0)
+    return max(0, sp), max(0, isk)
+
+
+def item_counts(entries):
+    """[{"type": {"href": ".../types/<id>/"}, "quantity": n}, ...] (battleServer._GetCharacterConsumedItems)."""
+    counts = {}
+    for entry in entries or []:
+        type_id = id_from_href((entry.get("type") or {}).get("href"))
+        if type_id and int(entry.get("quantity") or 0) > 0:
+            counts[type_id] = counts.get(type_id, 0) + int(entry["quantity"])
+    return counts
+
+
+def isk_value(counts):
+    cat = content.catalog()
+    return sum(cat.items.get(t, {}).get("basePrice", 0) * q for t, q in counts.items())
+
+
+def book_battle_member(entry, won, finished, now):
+    """Book one member of the host's report; returns the OnEndOfMatchResults numbers for own characters."""
+    member = store.get().battle_member(entry.get("credential") or "")
+    if not member:
+        return None
+    consumed = item_counts(entry.get("consumed"))
+    rules = battle_rules()
+    warpoints = int(entry.get("warpoints") or 0)
+    potential, isk = battle_reward(rules, warpoints, won, int(entry.get("duration") or 0)) if finished else (0, 0)
+    cap = rules["sp_cycle_cap"]
+    before = store.get().battle_sp_since(member["character_id"], cycle_start(now))
+    sp = max(0, min(potential, cap - before)) if cap else potential
+    booked = store.get().complete_battle_member(member["credential"], warpoints, won, sp, isk, consumed, now)
+    if booked is None:
+        print(f"battle: {member['credential']} already booked, ignored", flush=True)
+        return None
+    changed, taken = booked
+    char = store.get().character(member["character_id"])
+    outcome = ("won" if won else "lost") if finished else "left"
+    print(f"battle: character {char['id']} ({char['name']}) {outcome}: {warpoints} WP, +{sp} SP (of {potential}), "
+          f"+{isk} ISK, lost {taken} (host reported {consumed})", flush=True)
+    base = HUB.base_of(f"/characters/{char['id']}/notifications/")
+    if base:
+        req = {"base": base}
+        notify_items(req, char["id"], changed)
+        notify_isk(req, char)
+        notify_skill_points(char["id"])
+    return {"ISKSpent": isk_value(consumed), "ISKReward": isk, "skillPoints": sp, "potentialSkillPoints": potential,
+            "rewardInCurrentCycle": before + sp, "personalCycleCap": cap}
+
+
+@route("POST", r"^/dev/battle/completed/$")
+def battle_completed(req):
+    # {"winningTeam": 0/1, "attackerClonesLost", "defenderClonesLost", "members": [{"credential", "characterID",
+    #  "characterURI", "team", "duration", "warpoints", "consumed", "nonConsumed"}, ...]}
+    if not from_host(req):
+        return RawResponse(b'{"message": "host only"}', "application/json", status=403)
+    body = req["body"] or {}
+    winning = TEAM_NAMES.get(body.get("winningTeam"), body.get("winningTeam"))
+    print(f"battle: completed, winner {winning}, clones lost {body.get('attackerClonesLost')}/"
+          f"{body.get('defenderClonesLost')}, {len(body.get('members') or [])} members", flush=True)
+    now = time.time()
+    results = []
+    for entry in body.get("members") or []:
+        team = TEAM_NAMES.get(entry.get("team"), entry.get("team"))
+        booked = book_battle_member(entry, team == winning, True, now) if CHAR_STORE else None
+        results.append({"characterID": entry.get("characterID"), "characterURI": entry.get("characterURI"), "results": {
+            "ISKSpent": 0, "ISKReward": 0, "DKReward": 0, "skillPoints": 0, "modifierBonus": 0,
+            "potentialSkillPoints": 0, "rewardInCurrentCycle": 0, "personalCycleCap": 0, "corporationTax": 0,
+            "corporationPercent": 0.0, "standings": None, **(booked or {}), "team": team, "winningTeam": winning}})
+    return {"members": results}
+
+
+@route("POST", r"^/dev/battle/members/(\d+)/completed/$")
+def battle_member_completed(req):
+    # A player left before the end: {"credential", "team", "duration", "consumed", "nonConsumed", "reason"}
+    if not from_host(req):
+        return RawResponse(b'{"message": "host only"}', "application/json", status=403)
+    body = req["body"] or {}
+    battle_char_id = path_ids(req, r"^/dev/battle/members/(\d+)/")[0]
+    print(f"battle: member {battle_char_id} left ({body.get('reason')})", flush=True)
+    if CHAR_STORE:
+        book_battle_member(body, False, False, time.time())
+    return {}
 
 
 @route("DELETE", r"^/battles/(\d+)/members/(\d+)/$")

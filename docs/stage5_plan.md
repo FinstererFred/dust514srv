@@ -31,6 +31,10 @@ duration, warpoints, consumed, nonConsumed]`, Clone-Verluste). Wer früher geht,
    dem Match anzeigt (Ergebnisbildschirm/Battle-Report, eventuell eigenes Dokument). Rückkehr in die Merc Quarters
    ist `CLAUDE.md` Schritt 5 und gehört dazu.
 
+**Stand 2026-10-30:** Punkte 2–6 umgesetzt und im Prozess geprüft (Details in `NOTES.md`), Punkt 1 und die
+Abnahme in RPCS3 stehen aus. Verluste zählt der Dev-Hook über `fittingBattle2.DestroyFitting`, weil der Host kein
+Inventar führt.
+
 Fertig, wenn: Nach einem Ambush in RPCS3 hat der Charakter mehr SP und ISK, verbrauchte Granaten/Nanohives fehlen im Inventar,
 das Log zeigt die Buchung pro Spieler.
 

@@ -4,11 +4,12 @@
 # The PS3 build cannot compile Python source, so commands are a fixed set of actions, not code.
 import logging
 import sys
+import time
 
 log = logging.getLogger('dustdevhook')
 POLL_SECONDS = 3
 _state = {'polling': False, 'revision': None, 'battleServer': False, 'members': set(), 'hostSpawns': 0,
-          'offlineSkills': {}}
+          'offlineSkills': {}, 'byURI': {}, 'joined': {}, 'duration': {}, 'lost': {}, 'completed': False}
 
 
 def _InitBattleServices(svc, arg):
@@ -52,6 +53,7 @@ def _BattleMember(svc, arg):
     character.characterID = arg['characterID']
     character.vipLevel = 0
     svc.app.GetService('battleServer').characterCaches[arg['characterURI']] = character
+    _state['byURI'][arg['characterURI']] = arg
     if arg.get('host'):
         _state['hostCharID'] = arg['characterID']
     try:
@@ -143,9 +145,119 @@ def _ReopenDeployMap(app, hostSpawns):
             return
 
 
+# --- Stage 5b: end of match. CCP's battle server posts battle.completed and member.completed to the backend; the
+# listen host has no backend battle (self.battle None, self.members empty), so _CompleteBattle would fail. Instead
+# we post the same payload (plus each member's credential) to the dev server, which books the rewards and answers
+# with the OnEndOfMatchResults of every member; the end-of-match screen waits for them. Losses: the host runs with
+# the game client's role, so inventoryBattle tracks nothing; we count the fittings destroyed with a pawn
+# (fittingBattle2.DestroyFitting), consumable items as consumed and the rest as nonConsumed like CCP.
+
+def _Session(app):
+    return app.GetService('characterConnectionClient').httpSession
+
+
+def _Duration(uri, stop=False):
+    joined = _state['joined'].get(uri)
+    if joined is not None:
+        _state['duration'][uri] = _state['duration'].get(uri, 0) + int(time.time() - joined)
+        _state['joined'][uri] = None if stop else time.time()
+    return _state['duration'].get(uri, 0)
+
+
+def _Lost(charID):
+    lost = _state['lost'].pop(int(charID), ({}, {}))
+    return [[{'type': {'href': '/types/%s/' % t}, 'quantity': q} for t, q in d.iteritems()] for d in lost]
+
+
+def _ListenCompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesLost):
+    from svcmgr import GetUnrealService
+    _state['completed'] = True
+    warpoints = {}
+    try:
+        for stat in GetUnrealService('MatchInfo').GetEndOfMatchPlayerInfoList():
+            log.info('end of match stat: %r', stat)
+            warpoints[stat['characteruri']] = stat['warpoints']
+    except Exception:
+        log.exception('end of match stats failed')
+    members = []
+    for uri, arg in _state['byURI'].items():
+        consumed, nonConsumed = _Lost(arg['characterID'])
+        members.append({'credential': arg['credential'], 'characterID': arg['characterID'], 'characterURI': uri,
+                        'team': arg.get('team', 1), 'duration': _Duration(uri, stop=True),
+                        'warpoints': warpoints.get(uri) or 0, 'consumed': consumed, 'nonConsumed': nonConsumed})
+    log.info('battle completed: winningTeam=%s clones lost %s/%s, %s members', winningTeam, attackerClonesLost,
+             defenderClonesLost, len(members))
+    results = {}
+    try:
+        answer = _Session(self.app).Resource('/dev/battle/completed/').Post(
+            {'winningTeam': winningTeam, 'attackerClonesLost': attackerClonesLost,
+             'defenderClonesLost': defenderClonesLost, 'members': members}, content='vnd.ccp.eve.Api-v3')
+        results = dict((m['characterURI'], m['results']) for m in answer.get('members', []))
+    except Exception:
+        log.exception('posting the battle result failed')
+    teamNames = {0: 'attacker', 1: 'defender'}
+    for member in members:
+        result = results.get(member['characterURI']) or {
+            'ISKSpent': 0, 'ISKReward': 0, 'DKReward': 0, 'skillPoints': 0, 'modifierBonus': 0,
+            'potentialSkillPoints': 0, 'rewardInCurrentCycle': 0, 'personalCycleCap': 0, 'corporationTax': 0,
+            'corporationPercent': 0.0, 'standings': None, 'team': teamNames.get(member['team']),
+            'winningTeam': teamNames.get(winningTeam)}
+        log.info('end of match results for %s: %r', member['characterID'], result)
+        try:
+            if str(member['characterID']) == str(_state.get('hostCharID')):
+                self.app.GetService('dustClient').OnEndOfMatchResults(result)
+            else:
+                self.InvokeSvcMethodOnClientAsync(member['characterID'], 'dustClient', 'OnEndOfMatchResults', result)
+        except Exception:
+            log.exception('sending the results to %s failed', member['characterID'])
+    # CCP's battle server ends its process here (os.kill); the listen host stays up, players go back on their own.
+
+
+def _ListenMemberLeft(self, characterURI, reason):
+    arg = _state['byURI'].get(characterURI)
+    if not arg or arg.get('host'):
+        return
+    consumed, nonConsumed = _Lost(arg['characterID'])
+    body = {'credential': arg['credential'], 'team': arg.get('team', 1), 'duration': _Duration(characterURI, stop=True),
+            'consumed': consumed, 'nonConsumed': nonConsumed, 'reason': reason}
+    log.info('battle member left: %s %r', arg['characterID'], body)
+    try:
+        _Session(self.app).Resource('/dev/battle/members/%s/completed/' % arg['characterID']).Post(
+            body, content='vnd.ccp.eve.Api-v3')
+    except Exception:
+        log.exception('posting the member result failed')
+
+
 def _PatchBattleServer(module):
     cls = module.BattleServer
     originalSpawn = cls.SpawnCharacterWithFitting
+    originalComplete = cls._CompleteBattle
+    originalLeft = cls._MemberLeftBattle
+    originalJoined = cls.OnBattleMemberJoinedFromUnreal
+
+    def _CompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesLost):
+        if self.battle is not None or not _state['battleServer']:
+            return originalComplete(self, winningTeam, attackerClonesLost, defenderClonesLost)
+        if _state['completed']:
+            log.info('battle already completed, ignored')
+            return
+        _ListenCompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesLost)
+
+    def _MemberLeftBattle(self, characterURI, reason=None):
+        if self.battle is None and _state['battleServer'] and not _state['completed']:
+            try:
+                _ListenMemberLeft(self, characterURI, reason)
+            except Exception:
+                log.exception('member left failed for %s', characterURI)
+        return originalLeft(self, characterURI, reason)
+
+    def OnBattleMemberJoinedFromUnreal(self, characterURI):
+        _state['joined'][characterURI] = time.time()
+        return originalJoined(self, characterURI)
+
+    cls._CompleteBattle = _CompleteBattle
+    cls._MemberLeftBattle = _MemberLeftBattle
+    cls.OnBattleMemberJoinedFromUnreal = OnBattleMemberJoinedFromUnreal
 
     def SpawnCharacterWithFitting(self, _charid, fittingInfoStr):
         if str(_charid) == str(_state.get('hostCharID')):
@@ -198,7 +310,34 @@ def _PatchDustUnreal(module):
     log.info('dustdevhook: patched dust.dustUnreal.DustUnreal')
 
 
-PATCHES = {'dust.dustUnreal': _PatchDustUnreal, 'dust.battleServer': _PatchBattleServer}
+def _PatchFittingBattle(module):
+    # Losses for stage 5b: what a destroyed fitting needed (checked out at spawn, not checked in again).
+    cls = module.FittingBattle2
+    originalDestroy = cls.DestroyFitting
+
+    def DestroyFitting(self, charID, fittingString):
+        required = next((items for fs, items in self.checkedOutFittingString[int(charID)] if fs == fittingString), None)
+        destroyed = originalDestroy(self, charID, fittingString)
+        if destroyed and required:
+            from catma import catmaDB
+            cdb = catmaDB.GetDB()
+            consumed, nonConsumed = _state['lost'].setdefault(int(charID), ({}, {}))
+            for typeID, quantity in required.iteritems():
+                target = consumed if cdb.GetTypeByID(typeID).GetValue('consumable') else nonConsumed
+                target[typeID] = target.get(typeID, 0) + quantity
+            log.info('fitting destroyed for %s: %r', charID, required)
+        return destroyed
+
+    DestroyFitting.__dict__.update(originalDestroy.im_func.__dict__)
+    cls.DestroyFitting = DestroyFitting
+    # UE3 calls through svcmgr's registry, which UnrealCallableClass filled with the original function.
+    import svcmgr
+    svcmgr._methodRegistry.get(cls, {})['DestroyFitting'] = DestroyFitting
+    log.info('dustdevhook: patched dust.fittingBattle2.FittingBattle2')
+
+
+PATCHES = {'dust.dustUnreal': _PatchDustUnreal, 'dust.battleServer': _PatchBattleServer,
+           'dust.fittingBattle2': _PatchFittingBattle}
 
 
 class _PatchFinder(object):

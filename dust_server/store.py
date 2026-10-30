@@ -58,6 +58,14 @@ MIGRATIONS = [
     ALTER TABLE characters ADD COLUMN items_given INTEGER NOT NULL DEFAULT 0;
     ALTER TABLE users ADD COLUMN aur INTEGER
     """,
+    # version 3 (stage 5b: which character played under which battle ID, and what the battle paid out)
+    """
+    CREATE TABLE battle_members (credential TEXT PRIMARY KEY, battle_id INTEGER NOT NULL,
+                                 battle_char_id INTEGER NOT NULL, character_id INTEGER NOT NULL, team INTEGER NOT NULL,
+                                 joined_at REAL NOT NULL, completed_at REAL, warpoints INTEGER, won INTEGER,
+                                 sp INTEGER, isk INTEGER);
+    CREATE INDEX battle_members_character ON battle_members (character_id, completed_at)
+    """,
 ]
 
 FIRST_ITEM_ID = 1000003800001  # CCP's offline inventory uses 1000003700001 and up
@@ -333,6 +341,43 @@ class Store:
     def set_lp(self, char_id, corp_id, amount):
         with self.transaction():
             self.db.execute("INSERT OR REPLACE INTO loyalty VALUES (?, ?, ?)", (char_id, corp_id, amount))
+
+    # --- battles (stage 5b) ---------------------------------------------------------------------------------------
+
+    def add_battle_member(self, credential, battle_id, battle_char_id, char_id, team, now=None):
+        now = time.time() if now is None else now
+        with self.transaction():
+            self.db.execute("INSERT OR REPLACE INTO battle_members (credential, battle_id, battle_char_id, character_id,"
+                            " team, joined_at) VALUES (?, ?, ?, ?, ?, ?)",
+                            (credential, battle_id, battle_char_id, char_id, team, now))
+
+    def battle_member(self, credential):
+        return self._one("SELECT * FROM battle_members WHERE credential = ?", (credential,))
+
+    def battle_sp_since(self, char_id, since):
+        """SP a character got from battles completed at or after `since` (the weekly cap)."""
+        return self._one("SELECT COALESCE(SUM(sp), 0) AS sp FROM battle_members WHERE character_id = ?"
+                         " AND completed_at >= ?", (char_id, since))["sp"]
+
+    def complete_battle_member(self, credential, warpoints, won, sp, isk, consumed, now=None):
+        """Book one member's battle in one transaction: SP and ISK on top, `consumed` ({typeID: quantity}) taken
+        from the inventory but never below 0. Returns (changed stacks, {typeID: quantity taken}), or None if the
+        member is unknown or already booked."""
+        now = time.time() if now is None else now
+        with self.transaction():
+            member = self.battle_member(credential)
+            if not member or member["completed_at"] is not None or not self.character(member["character_id"]):
+                return None
+            char_id = member["character_id"]
+            taken = {t: min(q, self.quantity(char_id, t)) for t, q in consumed.items() if q > 0}
+            taken = {t: q for t, q in taken.items() if q}
+            changed = self.add_items(char_id, {t: -q for t, q in taken.items()})
+            self.add_sp(char_id, sp, now)
+            self.db.execute("UPDATE characters SET isk = isk + ? WHERE id = ?", (isk, char_id))
+            self.db.execute("UPDATE battle_members SET completed_at = ?, warpoints = ?, won = ?, sp = ?, isk = ?"
+                            " WHERE credential = ?", (now, warpoints, None if won is None else int(won), sp, isk,
+                                                       credential))
+        return changed, taken
 
     def _max_id(self, table):
         return self._one(f"SELECT COALESCE(MAX(id), 0) AS id FROM {table}")["id"]

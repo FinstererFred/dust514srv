@@ -461,6 +461,25 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   der Host checkt das Fitting aus (`fittingBattle2 Checking out fitting`), danach keine Fehler, Spawn laut Nutzer ok.
   Leere Slots kommen als `-1` an. Der Host prüft weiter gegen sein 999er-Inventar und bucht nichts ab.
   Noch offen in RPCS3: LP-Kauf, Skillbuch/Respec verbrauchen.
+- **Stufe 5b Matchende und Belohnungen, umgesetzt, in RPCS3 noch ungetestet (2026-10-30):** Funde im Client-Code:
+  CCPs `_CompleteBattle` würde auf dem Listen-Host scheitern (`self.members` leer, `self.battle` None) und am Ende den
+  Prozess beenden (`os.kill`). Der Ergebnisbildschirm (`endOfMatch2`) öffnet erst, wenn `dustClient.OnEndOfMatchResults`
+  ankommt; „Merc Quarters“ darin ruft `dustUnreal.QuitToMercQuarters` (Rückkehr geht also clientseitig). Der Host hat die
+  Client-Rolle, daher `inventoryBattle.useInventory = False`: `consumed` bleibt immer leer. `fittingBattle2` merkt sich
+  ausgecheckte Fittings trotzdem (`checkedOutFittingString`), `DestroyFitting` entfernt sie beim Tod. UE3 ruft
+  `@UnrealCallable`-Methoden über `svcmgr._methodRegistry` (beim Laden der Klasse gefüllt), Patches müssen dort mit rein.
+  Umsetzung: `dustdevhook` ersetzt auf dem Listen-Host `_CompleteBattle`/`_MemberLeftBattle`, zählt Verluste in
+  `DestroyFitting` (verbrauchbar → consumed, sonst nonConsumed) und Spielzeit ab `OnBattleMemberJoinedFromUnreal`, schickt
+  `POST /dev/battle/completed/` bzw. `/dev/battle/members/{id}/completed/` (nur vom Host) und verteilt die Antwort als
+  `OnEndOfMatchResults` (eigener Spieler des Hosts direkt). Server: Tabelle `battle_members` (Schema 3, Schlüssel
+  Credential), Buchung in einer Transaktion, Formel und Wochengrenze (Montag 00:00 UTC) in `content/rewards.json` „battle“
+  (Web-Admin „Rewards“). Wer früher geht, bekommt nichts, verliert aber Ausrüstung. Im Prozess geprüft (Wegwerf-DB): 403
+  von außen, Sieg 900 WP → +1400 SP/+145000 ISK, Verlust auf Bestand begrenzt, doppelte Meldung ignoriert, Abgang bucht
+  nur Verluste. Parität ohne Schalter identisch.
+  **Offen in RPCS3:** Ruft der Host `OnBattleServerStoppedFromUnreal` überhaupt auf? Kommt `DestroyFitting` beim Tod?
+  Welche Felder hat `GetEndOfMatchPlayerInfoList()` (wird geloggt)? Kommt `OnEndOfMatchResults` per
+  `InvokeSvcMethodOnClientAsync` beim Client an? Vorher `patch_common_sdat.py` für Host und Client b ausführen und den
+  CREST-Server neu starten (Schema-Migration 3 legt `dust.sqlite.bak-2` an).
 
 ## Hypothesen
 
@@ -514,6 +533,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 - Wie teuer sind aktive Spieler (Laufen, Schießen) im Vergleich zu untätigen Pawns?
 - Ab wie vielen Clients lohnt ein zweiter PC, damit die CPU-Konkurrenz die Messung nicht verfälscht?
 - Wie lassen sich headless Clients mit Eingabe-Wiedergabe betreiben (Pad-Eingaben in RPCS3 skripten)?
+- **Fahrzeuge im Gefecht: „No Assets Available“ (2026-10-30, Nutzer, eigenes Fahrzeug-Fitting, Ambush):** Kommt aus
+  `ui/quickFitting._OpenVehicleFittingSubPage`, wenn die UE3-Prüfung `unrealFittingSvc.AllowSpwanVehicleInFitting()` nicht
+  `mVehicle_Spawn_OK` liefert. Die Fittings selbst werden dort gar nicht gelesen. Vermutung: Ambush erlaubt keine Fahrzeuge.
+  Nächster Test in Skirmish/Domination; erst wenn dort die Kategorien kommen, die Fitting-Liste prüfen.
 - **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
   sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
   Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),

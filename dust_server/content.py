@@ -34,7 +34,12 @@ DEFAULTS = {
     "loyalty": {"stores": {str(corp): {"balance": 0, "offers": {}} for corp in LOYALTY_STORES}},
     # Daily login rewards per consecutive day (questsClient/welcomeScreen index this list).
     "rewards": {"daily_login": [{"sp": sp, "aur": aur} for sp, aur in
-                                [(10000, 0), (15000, 0), (20000, 0), (25000, 0), (30000, 0), (35000, 0), (40000, 50)]]},
+                                [(10000, 0), (15000, 0), (20000, 0), (25000, 0), (30000, 0), (35000, 0), (40000, 50)]],
+                # Per battle played to the end (stage 5b): SP = WP * sp_per_warpoint + sp_win/sp_loss, at most up to
+                # the weekly cap (0 = none); ISK = isk_base + WP * isk_per_warpoint (+ isk_win). Less than
+                # min_seconds in the battle: nothing.
+                "battle": {"sp_per_warpoint": 1.0, "sp_win": 500, "sp_loss": 250, "isk_base": 50000,
+                           "isk_per_warpoint": 50, "isk_win": 50000, "sp_cycle_cap": 48000, "min_seconds": 60}},
     "wallet": {"isk": 12345, "aur": 0},
     # Market storefront page; None = CCP's offline storefront.
     "storefront": {"layout": None},

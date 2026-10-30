@@ -392,7 +392,7 @@ async function pageHost(el) {
         field("Mode name", modeNameInput, "Shown on the deploy map"),
         field("Host player name", textInput(s.host_name, (v) => { s.host_name = v; })),
         field("Host team", select([["0", "0 – Attacker"], ["1", "1 – Defender"]], String(s.host_team), (v) => { s.host_team = Number(v); })),
-        field("Client team", select([["defender", "Defender"], ["attacker", "Attacker"]], s.client_team, (v) => { s.client_team = v; })))),
+        field("Client team", select([["auto", "Alternating"], ["defender", "Defender"], ["attacker", "Attacker"]], s.client_team, (v) => { s.client_team = v; })))),
     h("div", { class: "card" }, h("h2", { text: "Battle finder" }),
       h("div", { class: "form" },
         field("Show battle", checkbox(s.finder_enabled, (v) => { s.finder_enabled = v; }, "list it in the battle finder")),
@@ -721,7 +721,16 @@ async function pageRewards(el) {
       h("td", {}, numberInput(d.aur, (v) => { d.aur = v || 0; })),
       h("td", {}, h("button", { class: "danger", text: "×", disabled: cfg.daily_login.length <= 1, onclick: () => { cfg.daily_login.splice(i, 1); render(); } }))))));
   render();
+  const b = cfg.battle;
+  const battleFields = [
+    ["sp_per_warpoint", "SP per war point"], ["sp_win", "SP for a win"], ["sp_loss", "SP for a loss"],
+    ["isk_base", "ISK per battle"], ["isk_per_warpoint", "ISK per war point"], ["isk_win", "ISK for a win"],
+    ["sp_cycle_cap", "Weekly battle SP cap (0 = none)"], ["min_seconds", "Minimum seconds in the battle"]];
   el.replaceChildren(
+    head("Battle rewards", "Booked per own character when a battle ends (DUST_CHAR_STORE=1). Players who leave early get nothing, but lose what died with them."),
+    h("div", { class: "card" },
+      h("div", { class: "form" }, battleFields.flatMap(([key, label]) => field(label, numberInput(b[key], (v) => { b[key] = v || 0; }, { step: "any" })))),
+      h("div", { class: "actions" }, h("button", { class: "primary", text: "Save", onclick: (e) => run(e.target, async () => { await api("/api/content/rewards", cfg); toast("Battle rewards saved"); }) }))),
     head("Login rewards", "Reward per consecutive login day, shown on the welcome screen."),
     h("div", { class: "card" }, body,
       h("div", { class: "actions" },
