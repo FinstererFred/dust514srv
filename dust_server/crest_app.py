@@ -1481,6 +1481,24 @@ def battle_character(req, char_id):
     }
 
 
+@route("GET", r"^/battlecharacters/(\d+)/$")
+def battle_character_document(req):
+    # The players' URIs on the listen host (register_listen_member) reach the clients in battle, e.g. the show-info
+    # screen (otherCharactersClient.GetCharacterInfo). A 404 there is an uncaught exception that disconnects the
+    # client. Answer with the character behind the battle ID: the own character, else CCP's offline one by name.
+    battle_id = path_ids(req, r"^/battlecharacters/(\d+)/$")[0]
+    with LISTEN_LOCK:
+        member = next((m for m in reversed(LISTEN_MEMBERS) if m["characterID"] == battle_id), None)
+    crest_id = (member or {}).get("crestCharacterID")
+    result, source = CrestApp().dispatch({**req, "path": f"/characters/{crest_id or battle_id}/"})
+    if source is None or isinstance(result, (Exception, RawResponse)):
+        return result if source else RawResponse(b'{"message": "unknown battle character"}', "application/json",
+                                                  status=404)
+    if member and not crest_id:
+        result = {**result, "name": member["name"]}
+    return result
+
+
 def register_listen_member(req, config, team, character=None):
     # Every player needs its own battle character ID and URI: DustTeamGame.Login (credential branch,
     # ?battleID=) takes them from the host's battleServer, whose cache is keyed by URI. All local players

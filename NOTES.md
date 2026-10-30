@@ -533,6 +533,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 - Wie teuer sind aktive Spieler (Laufen, Schießen) im Vergleich zu untätigen Pawns?
 - Ab wie vielen Clients lohnt ein zweiter PC, damit die CPU-Konkurrenz die Messung nicht verfälscht?
 - Wie lassen sich headless Clients mit Eingabe-Wiedergabe betreiben (Pad-Eingaben in RPCS3 skripten)?
+- **Kick im Gefecht durch Info-Bildschirm (2026-10-30, Client b, Skirmish):** Kein Kick vom Host. Client b öffnete
+  einen Spieler-Info-Bildschirm (`showInfoScreen._GetCharacterInfo` → `otherCharactersClient.GetCharacterInfo`) mit der
+  Gefechts-URI `GET /battlecharacters/2100001612/`; unser 404 war im Client unbehandelt → `UNCAUGHT_TOP_LEVEL_EXCEPTION`,
+  Netz getrennt, Host meldet `OnBattleMemberLeftFromUnreal`. Fix: Route `/battlecharacters/{id}/` liefert das
+  Charakter-Dokument des eigenen Charakters hinter der Gefechts-ID, sonst CCPs Offline-Charakter mit dem Mitgliedsnamen.
+  Im Prozess geprüft, in RPCS3 offen (Server-Neustart nötig).
 - **Fahrzeuge im Gefecht: „No Assets Available“ (2026-10-30, Nutzer, eigenes Fahrzeug-Fitting, Ambush):** Kommt aus
   `ui/quickFitting._OpenVehicleFittingSubPage`, wenn die UE3-Prüfung `unrealFittingSvc.AllowSpwanVehicleInFitting()` nicht
   `mVehicle_Spawn_OK` liefert. Die Fittings selbst werden dort gar nicht gelesen. Vermutung: Ambush erlaubt keine Fahrzeuge.
