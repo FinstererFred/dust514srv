@@ -18,13 +18,29 @@ import urllib.parse
 from pathlib import Path
 
 import content
+import np_ticket
 import offline_bridge
 import server_status
+import store
 
 RESPONSES_DIR = Path(__file__).resolve().parent / "responses"
 
 USER_ID = 1000000720  # the user id CCP's offline data is built around
+OFFLINE_CHARACTER_ID = 2100001611  # CCP's "Offline Character 1", template for our own character documents
 ACCESS_TOKEN = "dust-local-access-token"
+REFRESH_TOKEN = "dust-local-refresh-token"
+
+# Accounts and characters per RPCN account from store.py (docs/character_server_plan.md, stage 1a). Off by default:
+# then every account shares CCP's offline user and characters as before. The listen-server host keeps CCP's offline
+# character either way: logins of the accounts in DUST_HOST_ACCOUNTS get the shared token, and every request with
+# that token (or none) is answered the old way.
+CHAR_STORE = os.environ.get("DUST_CHAR_STORE") == "1"
+HOST_ACCOUNTS = {a.strip() for a in os.environ.get("DUST_HOST_ACCOUNTS", "DustHost").split(",") if a.strip()}
+STARTER = {  # stage 1a: every account gets an Amarr Enforcer until characters can be created (stage 3)
+    "bloodline_id": 5, "race_id": 4, "specialty_id": 353915, "corporation_id": 1000205,
+    "portrait_id": 2,  # myCharactersClient.GetPortraitIDByRace: Caldari 0, Gallente 1, Amarr 2, Minmatar 3
+    "gender": 1, "npe_state": 1,  # as CCP's offline character 1
+}
 
 # Document keys from dust/documentsClient.py. CDN documents are plain text files the client
 # downloads through its HTTP cache; the EULA must not be empty or the client disconnects.
@@ -123,20 +139,93 @@ def dust_root(req):
     return root
 
 
+def token_answer(token=ACCESS_TOKEN, refresh=REFRESH_TOKEN):
+    return {"access_token": token, "token_type": "Bearer", "expires_in": store.TOKEN_LIFETIME, "refresh_token": refresh}
+
+
+UNAUTHORIZED = RawResponse(b'{"message": "unknown token"}', "application/json", status=401)
+
+
 @route("POST", r"^/oauth/token/$")
 def oauth_token(req):
-    # Client sends grant_type=password, scope=dust and psn_ticket=<base64 NP ticket> (crest/authentication.py).
-    return {
-        "access_token": ACCESS_TOKEN,
-        "token_type": "Bearer",
-        "expires_in": 3600,
-        "refresh_token": "dust-local-refresh-token",
-    }
+    # Client sends grant_type=password, scope=dust and psn_ticket=<base64 NP ticket> (crest/authentication.py);
+    # after expires_in it sends grant_type=refresh_token with the refresh token and no ticket.
+    body = req["body"] if isinstance(req["body"], dict) else {}
+    if not CHAR_STORE:
+        return token_answer()
+    if body.get("grant_type") == "refresh_token":
+        if body.get("refresh_token") == REFRESH_TOKEN:
+            return token_answer()
+        user = store.get().user_for_refresh_token(body.get("refresh_token", ""))
+        return token_answer(*store.get().issue_token(user["id"])) if user else UNAUTHORIZED
+    try:
+        online_id = np_ticket.parse(body.get("psn_ticket", ""))["online_id"]
+    except (np_ticket.TicketError, ValueError) as e:
+        print(f"oauth: unreadable ticket ({e}), shared offline user", flush=True)
+        return token_answer()
+    if online_id in HOST_ACCOUNTS:
+        return token_answer()
+    user = store.get().user_for_online_id(online_id)
+    if not store.get().characters_of(user["id"]):
+        create_starter_character(user)
+    return token_answer(*store.get().issue_token(user["id"]))
+
+
+def create_starter_character(user):
+    specialty = next(s for s in content.specialties() if s["id"] == STARTER["specialty_id"])
+    name = user["online_id"]
+    while store.get().name_taken(name):
+        name += "_"
+    return store.get().create_character(
+        user["id"], name, STARTER["gender"], STARTER["bloodline_id"], STARTER["race_id"], specialty,
+        STARTER["portrait_id"], STARTER["corporation_id"], npe_state=STARTER["npe_state"])
+
+
+def bearer_token(req):
+    auth = next((v for k, v in req["headers"].items() if k.lower() == "authorization"), "")
+    return auth[len("Bearer "):].strip() if auth.startswith("Bearer ") else None
+
+
+def current_user(req):
+    """The store's user for the request's token; None for the shared offline user (store off, host, no token).
+
+    Raises Unauthorized for a token the store does not know (e.g. issued before its state was deleted).
+    """
+    token = bearer_token(req)
+    if not CHAR_STORE or not token or token == ACCESS_TOKEN:
+        return None
+    user = store.get().user_for_token(token)
+    if not user:
+        raise Unauthorized()
+    return user
+
+
+class Unauthorized(Exception):
+    pass
+
+
+def own_character(req, char_id, private=False):
+    """The store's character `char_id`, or None if the old (CCP offline) answer applies.
+
+    IDs below store.FIRST_CHARACTER_ID are CCP's offline characters (the host's). Our IDs that do not exist, or
+    another account's character on a private document, are a 404 (logged as missing:character), no fallback.
+    """
+    if not CHAR_STORE or char_id < store.FIRST_CHARACTER_ID:
+        return None
+    char = store.get().character(char_id)
+    if not char or (private and (current_user(req) or {}).get("id") != char["user_id"]):
+        raise CharacterMissing(char_id)
+    return char
+
+
+class CharacterMissing(Exception):
+    pass
 
 
 @route("GET", r"^/decode/$")
 def token_decode(req):
-    return {"user": {"id": USER_ID, "href": f"{req['base']}/users/{USER_ID}/"}}
+    user_id = (current_user(req) or {"id": USER_ID})["id"]
+    return {"user": {"id": user_id, "href": f"{req['base']}/users/{user_id}/"}}
 
 
 @route("POST", r"^/devices/$")
@@ -147,6 +236,127 @@ def register_device(req):
 @route("GET", r"^/keepalive/$")
 def keep_alive(req):
     return {}
+
+
+# --- Accounts and characters from store.py (CHAR_STORE) -------------------------------------------------------
+# Our own documents start from CCP's answer for its offline user/character 1 with the IDs swapped (rebind), so every
+# link the client knows stays; the fields that describe the character are then set from the store.
+
+OFFLINE = object()  # handler result: answer as if there were no own handler (CCP's offline answer, logged as such)
+
+
+def rebind(result, user_id, char_id):
+    """`result` with CCP's offline user and character IDs replaced by ours."""
+    text = json.dumps(result)
+    text = re.sub(rf"\b{OFFLINE_CHARACTER_ID}\b", str(char_id), text)
+    return json.loads(re.sub(rf"\b{USER_ID}\b", str(user_id), text))
+
+
+def character_template(path, char):
+    return rebind(offline_result(path.replace(f"/{char['id']}/", f"/{OFFLINE_CHARACTER_ID}/")),
+                  char["user_id"], char["id"])
+
+
+def link(req, path, **extra):
+    return {"href": f"{req['base']}{path}", **extra}
+
+
+def portrait_link(req, char):
+    return link(req, f"/portraits/mercenary/{bool(char['gender'])}/{char['portrait_id']}/", id=char["portrait_id"])
+
+
+def sp_per_day(char):
+    # Without passive gain 0, so the client's local counter (skillClient) does not count up either.
+    return char["sp_per_day"] if char["passive_sp"] else 0
+
+
+def member_for(char):
+    days = int((time.time() - char["created_at"]) // 86400)
+    return f"Member for {days} day{'s' if days != 1 else ''}"
+
+
+def mercenary_entry(req, char):
+    """MercenaryCollection-v1 entry as read by characterCreation2 and myCharactersClient."""
+    return {
+        "character": link(req, f"/characters/{char['id']}/", id=char["id"], name=char["name"]),
+        "self": f"{req['base']}/users/{char['user_id']}/mercenaries/{char['id']}/",
+        "skillPoints": store.total_sp(char), "skillPointsPerDay": sp_per_day(char),
+        "gender": bool(char["gender"]),
+        "bloodline": link(req, f"/bloodlines/{char['bloodline_id']}/", id=char["bloodline_id"]),
+        "portrait": portrait_link(req, char),
+        "corporation": {**corporation_link(req, char["corporation_id"]), "memberFor": member_for(char)},
+        "wealth": {"isk": float(char["isk"])},
+        "specialty": link(req, f"/specialties/{char['specialty_id']}/", id=char["specialty_id"]),
+        "npeState": char["npe_state"],
+        "passiveSkillGain": {"status": char["passive_sp"], "self": link(
+            req, f"/users/{char['user_id']}/mercenaries/passiveskillgain/{char['id']}/")},
+        "favoriteFitting": None,
+    }
+
+
+def path_ids(req, pattern):
+    return [int(x) for x in re.match(pattern, req["path"]).groups()]
+
+
+@route("GET", r"^/users/(\d+)/$")
+def user_document(req):
+    user = current_user(req)
+    if not user:
+        return OFFLINE
+    if path_ids(req, r"^/users/(\d+)/$")[0] != user["id"]:
+        raise CharacterMissing(None)
+    return {"mercenaries": link(req, f"/users/{user['id']}/mercenaries/"),
+            "notifications": link(req, f"/users/{user['id']}/notifications/")}
+
+
+@route("GET", r"^/users/(\d+)/mercenaries/$")
+def user_mercenaries(req):
+    user = current_user(req)
+    if not user:
+        return OFFLINE
+    if path_ids(req, r"^/users/(\d+)/mercenaries/$")[0] != user["id"]:
+        raise CharacterMissing(None)
+    return collection([mercenary_entry(req, char) for char in store.get().characters_of(user["id"])])
+
+
+@route("PUT", r"^/users/(\d+)/mercenaries/passiveskillgain/(\d+)/$")
+def passive_skill_gain(req):
+    # characterCreation2.ActivateSkillGainCallback: {"status": 1}; one character per account gains SP passively.
+    char = own_character(req, path_ids(req, r"^/users/(\d+)/mercenaries/passiveskillgain/(\d+)/$")[1], private=True)
+    if not char:
+        return OFFLINE
+    status = (req["body"] if isinstance(req["body"], dict) else {}).get("status", 1)
+    store.get().set_passive(char["id"], 1 if status else 0)
+    return {}
+
+
+@route("GET", r"^/characters/(\d+)/$")
+def character_document(req):
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/$")[0])
+    if not char:
+        return OFFLINE
+    doc = character_template(req["path"], char)
+    corp = offline_result(f"/corporations/{char['corporation_id']}/")
+    doc.update({
+        "name": char["name"], "gender": char["gender"], "description": "", "skillPointsPerDay": float(sp_per_day(char)),
+        "bloodLine": link(req, f"/bloodlines/{char['bloodline_id']}/", id=char["bloodline_id"]),
+        "race": link(req, f"/races/{char['race_id']}/", id=char["race_id"]),
+        "corporation": {**doc.get("corporation", {}), **corporation_link(req, char["corporation_id"]),
+                        "logo": corp.get("logo") or doc.get("corporation", {}).get("logo")},
+    })
+    return doc
+
+
+@route("GET", r"^/characters/(\d+)/private/$")
+def character_private(req):
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/private/$")[0], private=True)
+    if not char:
+        return OFFLINE
+    doc = character_template(req["path"], char)
+    corp_id = char["corporation_id"]
+    doc.update({"corporation": corporation_link(req, corp_id),
+                "corporationMember": link(req, f"/corporations/{corp_id}/members/{char['id']}/")})
+    return doc
 
 
 SOLAR_SYSTEMS = {
@@ -217,7 +427,12 @@ def id_from_href(href):
 
 @route("GET", r"^/characters/(\d+)/mercenary/$")
 def mercenary(req):
-    merc = offline_result(req["path"])
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/mercenary/$")[0])
+    if char:
+        merc = character_template(req["path"], char)
+        merc["portrait"] = portrait_link(req, char)
+    else:
+        merc = offline_result(req["path"])
     # 03.19 reads mercenaryPublicData['dustAgents'] (dustAgentClient.py); CCP's offline data predates it.
     merc.setdefault("dustAgents", {"href": f"{req['base']}{req['path']}agents/"})
     return merc
@@ -252,7 +467,12 @@ def boosters(req):
 
 @route("GET", r"^/characters/(\d+)/mercenary/private/$")
 def mercenary_private(req):
-    data = offline_result(req["path"])
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/mercenary/private/$")[0], private=True)
+    if char:
+        data = character_template(req["path"], char)
+        data.update({"ISKDiffSinceLastLogOff": 0, "SPDiffSinceLastLogOff": 0})
+    else:
+        data = offline_result(req["path"])
     # 03.19 reads mercenaryData['dailyQuest2Info']['href'] (questsClient.py); missing in the offline data.
     data.setdefault("dailyQuest2Info", {"href": f"{req['base']}{req['path']}dailyquest2/"})
     return data
@@ -286,9 +506,16 @@ def daily_bonus_info(req):
             "characterRewardReceived": False, "userRewardReceived": False}
 
 
-@route("PUT", r"^/characters/\d+/mercenary/$")
+@route("PUT", r"^/characters/(\d+)/mercenary/$")
 def update_mercenary(req):
-    # MercenaryUpdate-v1, e.g. {"aurSpent": 0}; CCP's offline handler has no PUT. Accepted, not stored yet.
+    # MercenaryUpdate-v1, e.g. {"aurSpent": 0}; CCP's offline handler has no PUT. Stored for our own characters.
+    char = own_character(req, path_ids(req, r"^/characters/(\d+)/mercenary/$")[0], private=True)
+    body = req["body"] if isinstance(req["body"], dict) else {}
+    fields = {column: int(body[key]) for key, column in
+              (("portraitID", "portrait_id"), ("aurSpent", "aur_spent"), ("npeState", "npe_state"))
+              if isinstance(body.get(key), (int, float, bool))}
+    if char and fields:
+        store.get().update_character(char["id"], **fields)
     return {}
 
 
@@ -789,9 +1016,15 @@ class CrestApp:
         result, source = None, None
         for m, regex, func in _routes:
             if m == method and regex.match(path):
-                result, source = func(req), f"own:{func.__name__}"
+                try:
+                    result, source = func(req), f"own:{func.__name__}"
+                except Unauthorized:
+                    return 401, "application/json; charset=utf-8", b'{"message": "unknown token"}', "unauthorized", {}
+                except CharacterMissing as e:
+                    return (404, "application/json; charset=utf-8", b'{"message": "unknown character"}',
+                            f"missing:character:{e.args[0]}", {})
                 break
-        else:
+        if result is OFFLINE or source is None:
             found, result = offline_bridge.dispatch(method, path, parameters=req["query"], resource=req["body"])
             source = "ccp_offline" if found else None
 

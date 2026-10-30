@@ -1,7 +1,8 @@
 # Charaktere, Skills und Skill-Training vom Server – Umsetzungsplan
 
-Stand 2026-10-29. Die Stufen 1 bis 5 sind laut diesem Dokument noch offen. Umgesetzt ist bisher nur die Bereinigung des
-AUR-Stores (Loyalty-Items standardmäßig aus). Das Dokument beschreibt Ziel, Reihenfolge und offene Entscheidungen.
+Stand 2026-10-30. **Stufe 1a ist im Code umgesetzt**, hinter dem Schalter `DUST_CHAR_STORE=1` (standardmäßig aus). Sie ist
+im Prozess getestet, in RPCS3 noch nicht (Funde und Testhinweise in `NOTES.md`). Die Stufen 1b bis 5 sind offen. Außerdem ist
+der AUR-Store bereinigt (Loyalty-Items standardmäßig aus). Das Dokument beschreibt Ziel, Reihenfolge und offene Entscheidungen.
 
 Zur AUR-Wirtschaft (Quellen, Limits, Store-Bewertung, Euro-Einordnung) siehe `docs/aur_economy.md`. Sie wird erst ab Stufe 5 gebraucht.
 
@@ -115,6 +116,7 @@ Kerndokumente (Punkte 1–6, 8); **1b** Template-Ersatz für die übrigen Endpun
    Benutzer- und Charakter-Endpunkten; `/dev/…`, `/cdn/…`, Dokumente, Markt-Stammdaten und Notification-Streams
    bleiben ohne Token erreichbar (die Dev-Hook-Abfragen und der HTTP-Cache des Clients schicken keinen mit).
 4. **Root-Daten (`dust_root`):** `user`- und `character`-Link auf den echten Benutzer bzw. ersten Charakter setzen.
+   *Umsetzung: entfällt. Der Client holt `/roots/dust/` ohne Token, der Benutzer kommt über `/decode/`.*
 5. **Spezialisierungen aus CATMA** (vorgezogen aus Stufe 2): `catma_service` bekommt `GET /specialties`
    (Rasse, Start-SP, SP/Tag, Start-ISK, Start-Skills, Start-Inventar), damit schon der automatische Startcharakter
    (Punkt 8) mit den richtigen Werten und Skills in der Datenbank landet. Ausgeliefert werden die Skills noch von
@@ -146,6 +148,11 @@ Kerndokumente (Punkte 1–6, 8); **1b** Template-Ersatz für die übrigen Endpun
    IPv4/IPv6 oder Proxy). Den Peer-Filter dann entfernen oder nur noch nutzen, wenn mehrere Streams denselben
    Besitzer haben. Wichtig: Kein echter Charakter darf eine ID aus dem Offline-Bereich bekommen (siehe
    Grundsatzentscheidung 3), sonst bekäme er wieder die Nachrichten des Hosts.
+
+**Umsetzung 1a (2026-10-30):** `store.py`, `np_ticket.py`, `catma_service/specialties.py`, Handler in `crest_app.py`.
+Schalter `DUST_CHAR_STORE=1`, Host-Konten über `DUST_HOST_ACCOUNTS` (Standard `DustHost`; sie und der alte Token bleiben auf
+CCP-Offline). Unser eigener Charakterbereich (ab 2100100000) ist strikt: Eine unbekannte ID gibt 404, ebenso ein fremder
+Charakter bei privaten Dokumenten. Öffentliche Dokumente sind für alle lesbar. Tests: `python -m unittest discover -s dust_server/tests`.
 
 **Prüfen:** Zwei RPCN-Konten (FinstererFred, DustTester2) loggen ein, sehen je einen eigenen Charakter mit eigenem
 Namen; Neustart des Servers → Charaktere noch da; nach über einer Stunde im Spiel (Token-Erneuerung) weiterhin

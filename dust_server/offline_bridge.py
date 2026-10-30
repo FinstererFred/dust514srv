@@ -33,3 +33,9 @@ def catalog():
     """Market groups and items from the client's CATMA database (catma_service/catalog.py)."""
     with urllib.request.urlopen(CATALOG_URL, timeout=60) as response:
         return json.loads(response.read())
+
+
+def specialties():
+    """Starting values per character specialty from the client's CATMA database (catma_service/specialties.py)."""
+    with urllib.request.urlopen(f"{SERVICE_BASE}/specialties", timeout=60) as response:
+        return json.loads(response.read())

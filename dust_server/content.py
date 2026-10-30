@@ -100,6 +100,16 @@ def catalog():
     return _catalog[0]
 
 
+_specialties = []
+
+
+def specialties():
+    """Character specialties with starting SP, SP per day, ISK, skills and inventory (one Enforcer per race)."""
+    if not _specialties:
+        _specialties.append(offline_bridge.specialties())
+    return _specialties[0]
+
+
 def _override(overrides, type_id):
     return overrides.get(str(type_id)) or {}
 

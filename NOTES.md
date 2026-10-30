@@ -144,6 +144,20 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 - **Teams automatisch:** `listen_team: "auto"` in `fake_battle.json` verteilt Beitretende abwechselnd (erster → Verteidiger,
   `Team=1`; zweiter → Angreifer, `Team=0`). Nachbeitritte zählen als neue Mitglieder, das ist also nur grob ausgeglichen.
   `dust_server/dev_once.py` schickt einzelne Konsolenbefehle an den laufenden Host, ohne die Karte neu zu starten.
+- **Charakter-Server 1a (2026-10-30), hinter `DUST_CHAR_STORE=1`, standardmäßig aus:** Ohne Schalter liefert der Server
+  nachweislich dieselben Antworten und Log-Quellen wie vorher (Vergleich alter/neuer `crest_app` im Prozess). Mit Schalter:
+  eigener Token pro RPCN-Konto (Online-ID aus dem `psn_ticket`), SQLite `dust_server/state/dust.sqlite`, automatischer
+  Startcharakter (Amarr-Enforcer, Name = Online-ID, 500 000 SP, 8 Start-Skills, 25 000 ISK aus CATMA `/specialties`).
+  Konten in `DUST_HOST_ACCOUNTS` (Standard `DustHost`) und alle Anfragen mit dem alten Token bleiben auf CCPs Offline-Daten.
+  Nur im Prozess getestet, **noch nicht in RPCS3**. Funde dabei:
+  - Der Client holt `/roots/dust/` **ohne** Token. Die Root-Links `user`/`character` können also nicht pro Benutzer sein und
+    zeigen weiter auf 1000000720/2100001611. Der Benutzer kommt über `/decode/`. Ob der Client den Root-`character`-Link
+    irgendwo nutzt, beim RPCS3-Test prüfen.
+  - Der Login schickt `Authorization: Basic …` (Client-Kennung), alle späteren Anfragen `Bearer <token>`.
+  - RPCN-Ticket: 254 Byte, Online-ID im 6. Element des Body-Abschnitts. `np_ticket.build()` erzeugt dasselbe Layout für Tests.
+  - Für den RPCS3-Test: Lokal ist FinstererFred der Host → `DUST_HOST_ACCOUNTS=FinstererFred`. Test-Clients starten mit
+    `-autologincharindex=1`, haben mit Schalter aber nur einen Charakter → Index 0 verwenden.
+  - ISK in der Charakterliste kommt schon aus der Datenbank (25 000), die Wallet-Seiten noch aus `wallet.json` (Stufe 1b).
 
 ## Hypothesen
 
