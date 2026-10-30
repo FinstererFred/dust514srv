@@ -6,9 +6,10 @@ Ziel: Skalierung über 5 Spieler messbar machen (CLAUDE.md Schritte 1–3). Der 
 Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel CPU, dass auf einem PC bei ~5 Schluss ist.
 
 1. **Billige Test-Clients.** Null-Client läuft (`D:\rpcs3_e`, siehe Funde), braucht aber ≥ 2 Kerne, weil die Threads aktiv
-   warten. Nächster Hebel, je eine Änderung: weniger SPU-Threads (`Max SPURS Threads` 6 → 2/1) und RPCS3-Wartelogik (SPU-
-   Loop-Detection, Thread-Scheduler). Ziel: ein Client auf 1 Kern bei ≥ 20 Hz und Spielzeit 1,0. Dann die übrigen Clients
-   (b–d) umstellen.
+   warten. `Max SPURS Threads: 1` erledigt (2 Kerne: 47 Hz). Nächste Hebel an der Render-Kette (RenderingThread +
+   rsx::thread ~170 %), je eine Änderung: `Frame limit: 30` bzw. `-novsync` weg und VSync 30, RSX-Einstellungen (z. B.
+   `Multithreaded RSX`), Spielargumente gegen Rendering. Ziel: ein Client auf 1 Kern bei ≥ 20 Hz und Spielzeit 1,0. Dann
+   b–d umstellen.
 2. **Eingabe-Wiedergabe.** Tastatur geht nur ans Fenster mit Fokus. Kandidat: virtuelle Gamepads (ViGEmBus-Treiber, Installation
    vorher mit dem Nutzer klären) pro Instanz plus RPCS3-Hintergrundeingabe, gesteuert per Skript (laufen, drehen, schießen).
 3. **Speicher in der emulierten PS3.** Freien Hauptspeicher (256 MB) bei 5 Spielern auslesen (z. B. `sys_memory_get_user_memory_size`
@@ -40,6 +41,18 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Mit Affinität (VSync): 1 Kern (2 logische) 6 Hz, Spielzeit 0,93, unbrauchbar; 2 Kerne 27 Hz, Spielzeit 1,0; 4 Kerne 60 Hz.
   Ein Client braucht also mindestens 2 Kerne, auf dem 5900X neben dem Host (CCD0) nur ~3 Clients auf CCD1. Host blieb bei
   83–88 Ticks/s mit einem Null-Client; mit zusätzlichem ungepinntem Vulkan-Client fiel er auf 69,5 (CPU-Konkurrenz).
+- **`Max SPURS Threads` am Null-Client senken hilft (2026-10-30, `D:\rpcs3_e`, Backup `*.before_spurs`, jetzt 1):** Es bleiben
+  6 Kernel-Threads, RPCS3 lässt aber nur N gleichzeitig laufen. VSync, gespawnt, untätig, 30 s:
+
+  | Max SPURS | ungepinnt | 4 Kerne | 2 Kerne | 1 Kern |
+  |---|---|---|---|---|
+  | 6 | 59 Hz, 493 % | 60 Hz, 498 % | 27 Hz | 6 Hz, Spielzeit 0,93 |
+  | 2 | 59 Hz, 458 % | – | 39 Hz | – |
+  | 1 | 58 Hz, 398 % | – | 47 Hz | 9 Hz, Spielzeit 0,95 |
+
+  Beitritt, Spawn (V) und Bewegung funktionieren mit 1. Ein Kern bleibt unbrauchbar. Jetzt dominieren RenderingThread (~90 %) und
+  rsx::thread (~80 %), also die Render-Kette trotz Null-Renderer und Weltrendering-Patch. Achtung beim Warten auf den Beitritt:
+  „Client sieht Pawns“ taugt nicht als Kriterium, wenn am Host niemand gespawnt ist.
 - **Keine Spielerobergrenze im UnrealScript (2026-10-30):**
   - `DustTeamGame.AtCapacity` ist überschrieben und gibt immer `false` zurück. Die UE3-Prüfung `NumPlayers >= MaxPlayers` in
     `GameInfo.AtCapacity` greift damit nie. `DustTeamGame.Login` weist nur ab, wenn Charakter-ID oder Character-URI fehlen,
