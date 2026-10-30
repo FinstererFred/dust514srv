@@ -7,9 +7,9 @@ Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel
 
 1. **Billige Test-Clients.** Null-Client läuft (`D:\rpcs3_e`, siehe Funde), braucht aber ≥ 2 Kerne, weil die Threads aktiv
    warten. `Max SPURS Threads: 1` erledigt (2 Kerne: 47 Hz). Nächste Hebel an der Render-Kette (RenderingThread +
-   rsx::thread ~170 %), je eine Änderung: `Frame limit: 30` bzw. `-novsync` weg und VSync 30, RSX-Einstellungen (z. B.
-   `Multithreaded RSX`), Spielargumente gegen Rendering. Ziel: ein Client auf 1 Kern bei ≥ 20 Hz und Spielzeit 1,0. Dann
-   b–d umstellen.
+   rsx::thread ~170 %). `Frame limit: 30` scheidet aus (siehe Ausprobiert). Bleibt: das Rendern selbst weiter abschalten
+   (Ghidra: Viewport-Draw bzw. HUD/Scaleform/Post-Processing überspringen, Game-Thread muss weiter ticken), gilt dann auch
+   für den Host. Ziel: ein Client auf 1 Kern bei ≥ 20 Hz und Spielzeit 1,0. Dann b–d umstellen.
 2. **Eingabe-Wiedergabe.** Tastatur geht nur ans Fenster mit Fokus. Kandidat: virtuelle Gamepads (ViGEmBus-Treiber, Installation
    vorher mit dem Nutzer klären) pro Instanz plus RPCS3-Hintergrundeingabe, gesteuert per Skript (laufen, drehen, schießen).
 3. **Speicher in der emulierten PS3.** Freien Hauptspeicher (256 MB) bei 5 Spielern auslesen (z. B. `sys_memory_get_user_memory_size`
@@ -207,6 +207,11 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Ausprobiert
 
+- **`Frame limit: 30` am Null-Client (2026-10-30, `D:\rpcs3_e`, Backup `*.before_frame30`):** Unbrauchbar. Login extrem langsam
+  (~25 s zwischen CREST-Anfragen, nach 10 min erst bei `/accounts/`), danach Stillstand ohne tickende Welt. V-Drücke während
+  des Logins könnten mitgewirkt haben, wahrscheinlich ist aber das gleiche Flip-Schlafen wie bei `Auto`. Zurück auf
+  `PS3 Native`: Beitritt nach 61 s, Spawn sofort. Ein niedrigeres Limit hätte ohnehin wenig gebracht, weil die Threads aktiv
+  warten (VSync 60 statt 86 Hz sparte keine CPU).
 - **`Frame limit: Auto` am Windows-Host (2026-10-30):** Host kam nur extrem langsam hoch (12–60 s zwischen den Login-Anfragen).
   Bekannt: ohne den eigenen RPCS3-Build schläft der Null-Renderer bei Auto an jedem Flip (`handle_emu_flip`). Zurück auf
   `PS3 Native`. `Vblank Rate: 120` hob die 60er-Grenze ebenfalls nicht (VSync wartet im Spiel), zurückgenommen.
