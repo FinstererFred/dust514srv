@@ -80,6 +80,7 @@
   |---|---|---|---|---|
   | verbunden, nicht gespawnt | 87,3 | 11,5 | – | 77 % |
   | 4 gespawnt, untätig | 84,0 (p95 18,0 ms) | 11,9 | 89,5 (11,2 ms) | 88 % / 70 % |
+  | 4 gespawnt, c läuft und schießt | 83,9 (p95 18,5 ms) | 11,9 | 89,0 | 86 % / 67 % |
 
   Gespawnte untätige Pawns kosten ohne Weltrendering nur noch ~0,1 ms pro Tick (vorher ~1,5 ms); die frühere Pawn-Last war also
   fast ganz Rendering. Jetzt begrenzt der Game-Thread (fast ein voller Kern). Bei 30 Ticks/s Ziel bleiben rund 21 ms Reserve
