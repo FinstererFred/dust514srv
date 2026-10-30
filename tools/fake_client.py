@@ -87,6 +87,7 @@ class Connection:
         self.verbose = False
         self.controller_bunches = []                # host -> client bunches on the PlayerController channel
         self.opened_bunches = []                    # (channel, data) of the first bunch of every other actor channel
+        self.closed_channels = []                   # actor channels the host closed (our pawn's one when we died)
         self.packet_id = 0
         self.sequence = {}                          # channel -> last reliable sequence we sent
         self.pending_acks = []
@@ -148,6 +149,8 @@ class Connection:
                 if b["open"] and self.verbose:
                     print("  opened channel %d type %s: %s" % (b["channel"], b["type"], b["data"][:12].hex()), flush=True)
                 self.stats["closed"] += b["close"] and b["channel"] != 0
+                if b["close"] and b["channel"] != 0:
+                    self.closed_channels.append(b["channel"])
                 if b["close"] and self.verbose:
                     print("  closed channel %d" % b["channel"], flush=True)
                 if b["channel"] == 0:
@@ -345,6 +348,14 @@ class Player:
             self.handle(*self.conn.controller_bunches.pop(0))
         while self.conn.opened_bunches:
             self.levels.scan_open(*self.conn.opened_bunches.pop(0))
+        while self.conn.closed_channels:
+            if self.conn.closed_channels.pop(0) == self.pawn:  # dead: the host drops the pawn, spawn again
+                self.conn.stats["deaths"] = self.conn.stats.get("deaths", 0) + 1
+                self.pawn, self.armed, self.streamed = None, False, False
+                self.next_fire = self.stop_fire = None
+                for archetype in (INVENTORY, WEAPON):          # the new pawn brings new ones
+                    self.levels.channels.pop(archetype, None)
+                self.next_spawn = now + 3.0
         if now >= self.next_levels:
             names = self.levels.take_unreported()
             if names:

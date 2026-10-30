@@ -29,6 +29,25 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **16 und 32 feuernde Fake-Clients (2026-10-30, frischer Host, alle mit Waffe):** Host `D:\rpcs3` Null-Renderer, `-novsync`,
+  Clients `--play --fitting assault --fire-interval 5 --fire-burst 2`, 30 s `host_tick.py`:
+
+  | Clients | Ticks/s | Mittel / p95 / max (ms) | main_thread | RSS rpcs3 | Host-Pawns |
+  |---|---|---|---|---|---|
+  | 16 | 39,3 | 25,4 / 34,8 / 257 | 94,8 % | 2443 MB | 16 |
+  | 32 | 16,6 | 60,3 / 81,8 / 116 | 95,4 % | 2446 MB | 31 |
+
+  Engpass bleibt allein der Game-Thread (ein Kern voll), RAM des Prozesses wächst kaum. Bei 32 liegt der Host deutlich
+  unter der konfigurierten Tickrate 30. Im 32er-Lauf starben 9 Clients und spawnten neu (41 Spawns für 32 Clients), der
+  Respawn funktioniert also. Fake-Clients zusammen 117 % CPU (3,6 % je Client, 30 MB), verfälschen die Messung auf 24
+  logischen CPUs kaum. Der frühere 16er-Wert (49 Ticks/s) war zu hoch, weil 6 Clients keine Waffe hatten (siehe nächster
+  Fund).
+- **Nur 100 Charakter-IDs haben Inventar (2026-10-30):** Der Host legt Inventar, Skills und Spawn-Fitting nur für CCPs
+  Offline-Charaktere 2100001611–2100001710 an (`userBattle.OfflineConnect`, `NUM_OFFLINE_PLAYERS = 100`). Ab ID
+  2100001711 wirft `fittingBattle2._CheckFittingValid` `'NoneType' object has no attribute 'current'` (Inventar fehlt), der
+  Pawn spawnt ohne Waffe. Der CREST-Server zählte die IDs je Host-Sitzung nur hoch (jeder Fake-Client-Start = neue ID); im
+  ersten 16er-Lauf mit Feuer bekamen deshalb nur 10 von 16 eine Waffe. Behoben: `register_listen_member` lässt die IDs im
+  Bereich 2100001612–2100001710 umlaufen. Für mehr als 99 gleichzeitige Spieler müsste der Dev-Hook Inventar selbst anlegen.
 - **Fake-Clients schießen (2026-10-30, Mitschnitt `dust_server/logs/udp_proxy_fire.jsonl`):** Ablauf nach `GivePawn`:
   `ServerSetCurrentWeapon(<Waffenkanal>)` auf dem eigenen `DustPawnInventoryManager` (Index 23 von 27), auf der
   `DustHandheldWeapon` `ServerSetCurrentFireMode(0)` (52/54); je Stoß auf Kanal 1 `ServerSetRightTriggerHeld(true)` (126)

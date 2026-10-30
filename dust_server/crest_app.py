@@ -998,13 +998,19 @@ LISTEN_LOCK = threading.Lock()
 LISTEN_CONNECT_DELAY = 2.0  # the host registers right after its poll returns
 
 
+OFFLINE_CHARACTERS_END = 2100001611 + 100      # userBattle.STARTING_OFFLINE_CHARID + NUM_OFFLINE_PLAYERS
+
+
 def register_listen_member(req, config, team):
     # Every player needs its own battle character ID and URI: DustTeamGame.Login (credential branch,
     # ?battleID=) takes them from the host's battleServer, whose cache is keyed by URI. All local players
     # share CCP's offline characters, so neither the CREST character nor the user tells them apart.
-    # The host itself uses first_member_id - 1.
+    # The host itself uses first_member_id - 1. Only CCP's offline characters 2100001611 to 2100001710 get an
+    # inventory, skills and a fitting (userBattle.OfflineConnect, NUM_OFFLINE_PLAYERS = 100); for a later ID the
+    # host's fitting check fails (inventory None) and the pawn spawns without a weapon. So the IDs wrap around.
     with LISTEN_LOCK:
-        character_id = config.get("first_member_id", 2100001612) + len(LISTEN_MEMBERS)
+        first = config.get("first_member_id", 2100001612)
+        character_id = first + len(LISTEN_MEMBERS) % (OFFLINE_CHARACTERS_END - first)
         member = {
             "credential": uuid.uuid4().hex[:24],
             "characterID": character_id,
