@@ -457,7 +457,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Dropsuit-Fitting angelegt, ohne Fehler. Folge: Ein Slot mit Standardmodul lässt sich nicht leeren (der Client setzt
   dann das Standardmodul). AUR-Kauf bestätigt (DustTester2 per DB auf 5000 AUR, 356040 für 1280 AUR, Stand 3720,
   Popup schließt). Ohne eigenen Wert gilt `wallet.json` (Standard 0 AUR), dann blockt schon der Client („insufficient
-  AUR“). Noch offen in RPCS3: LP-Kauf, Skillbuch/Respec verbrauchen, Fitting im Gefecht.
+  AUR“). Gefecht bestätigt (Host neu, Client b): `SpawnCharacterWithFitting 2100001612 364745:-1+-1,354106+354106,…`,
+  der Host checkt das Fitting aus (`fittingBattle2 Checking out fitting`), danach keine Fehler, Spawn laut Nutzer ok.
+  Leere Slots kommen als `-1` an. Der Host prüft weiter gegen sein 999er-Inventar und bucht nichts ab.
+  Noch offen in RPCS3: LP-Kauf, Skillbuch/Respec verbrauchen.
 
 ## Hypothesen
 
