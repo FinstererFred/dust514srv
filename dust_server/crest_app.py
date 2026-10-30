@@ -1110,14 +1110,21 @@ def fitting_summary(req, fitting):
 
 def fitting_document(req, fitting):
     # MercenaryFitting-v1: the adapter's slots in CATMA order; a slot set by hand overrides its default module.
-    # GetRequiredItems does not ask for a module that is the slot's default (preset militia suits).
+    # GetRequiredItems does not ask for a module that is the slot's default (preset militia suits). An empty slot
+    # has no "module" key and a slot without default no "defaultModule": fitting._InitSlotsInfo only maps a missing
+    # key to TYPEID_NONE (-1), an id None reaches stims.FitModule and raises (uncaught = disconnect).
     doc, href = fitting_summary(req, fitting), fitting_href(req, fitting)
     fitted = store.get().fitting_slots(fitting["id"])
     adapter = content.fitting_types().get(fitting["type_id"]) or {"slots": []}
-    doc["slots"] = [{"name": slot["name"], "visible": slot["visible"], "href": f"{href}slots/{slot['name']}/",
-                     "module": type_ref(req, fitted.get(slot["name"], slot["defaultModule"])),
-                     "defaultModule": type_ref(req, slot["defaultModule"]), "paint": type_ref(req, None)}
-                    for slot in adapter["slots"]]
+    doc["slots"] = []
+    for slot in adapter["slots"]:
+        entry = {"name": slot["name"], "visible": slot["visible"], "href": f"{href}slots/{slot['name']}/"}
+        module = fitted.get(slot["name"], slot["defaultModule"])
+        if module:
+            entry["module"] = type_ref(req, module)
+        if slot["defaultModule"]:
+            entry["defaultModule"] = type_ref(req, slot["defaultModule"])
+        doc["slots"].append(entry)
     return doc
 
 
