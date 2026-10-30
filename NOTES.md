@@ -484,6 +484,11 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   `dust.svcmgr`, CCPs Code importiert es implizit relativ). Weil der Patch beim Import von `dust.fittingBattle2` lief,
   fehlten danach alle Gefechtsdienste (`userBattle` not found). Fix: Registry über
   `module.UnrealCallableClass.func_globals` holen, Patch-Fehler fangen (`_ApplyPatch`). Danach alle drei Patches aktiv.
+  **Abgang vor Matchende in RPCS3 bestätigt (2026-10-30, Client b, Charakter 2100100003, Skirmish):** Tod über das Menü →
+  `DestroyFitting` kommt, Hook zählt `{367456: 1}` (nur der Dropsuit; `GetRequiredItems` verlangt für dieses Fitting keine
+  Module, vermutlich Standardmodule). Spiel verlassen → `_MemberLeftBattle` → `POST /dev/battle/members/2100001612/completed/`
+  (Dauer 158 s) → Server bucht 0 SP/0 ISK und zieht 367456 ×1 ab, Zeile in `battle_members` mit `completed_at`.
+  Migration 3 lief (`dust.sqlite.bak-2`). Offen: Matchende mit Ergebnisbildschirm (braucht ein zu Ende gespieltes Match).
 
 ## Hypothesen
 
