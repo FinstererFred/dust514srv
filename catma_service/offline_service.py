@@ -4,6 +4,7 @@
 #   POST /dispatch  {"method": "Get", "path": "/characters/1/mercenary/skills/", "parameters": {...}, "data": ...}
 #   -> {"found": true, "result": ...} | {"found": true, "error": "<traceback>"} | {"found": false}
 #   GET /catalog  market groups and items with names and base prices (catalog.py)
+#   GET /specialties  starting values per character specialty (specialties.py)
 import BaseHTTPServer
 import SocketServer
 import json
@@ -52,24 +53,24 @@ def dispatch(method, path, parameters=None, data=None):
         return {'found': True, 'error': traceback.format_exc()}
 
 
-_catalog = []  # built on first request, the CATMA DB does not change while the service runs
+_built = {}  # path -> JSON, built on first request, the CATMA DB does not change while the service runs
 
 
-def catalog():
-    if not _catalog:
-        import catalog as catalogModule
+def built(path):
+    if path not in _built:
+        module = __import__({'/catalog': 'catalog', '/specialties': 'specialties'}[path])
         with _lock:
-            _catalog.append(json.dumps(catalogModule.Build()))
-    return _catalog[0]
+            _built[path] = json.dumps(module.Build())
+    return _built[path]
 
 
 class Handler(BaseHTTPServer.BaseHTTPRequestHandler):
 
     def do_GET(self):
-        if self.path != '/catalog':
+        if self.path not in ('/catalog', '/specialties'):
             self.send_error(404)
             return
-        body = catalog()
+        body = built(self.path)
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.send_header('Content-Length', str(len(body)))
