@@ -480,6 +480,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Welche Felder hat `GetEndOfMatchPlayerInfoList()` (wird geloggt)? Kommt `OnEndOfMatchResults` per
   `InvokeSvcMethodOnClientAsync` beim Client an? Vorher `patch_common_sdat.py` für Host und Client b ausführen und den
   CREST-Server neu starten (Schema-Migration 3 legt `dust.sqlite.bak-2` an).
+  **Eingespielt (2026-10-30, Host):** Erster Start scheiterte: `import svcmgr` gibt es im Spiel nicht (Modul heißt
+  `dust.svcmgr`, CCPs Code importiert es implizit relativ). Weil der Patch beim Import von `dust.fittingBattle2` lief,
+  fehlten danach alle Gefechtsdienste (`userBattle` not found). Fix: Registry über
+  `module.UnrealCallableClass.func_globals` holen, Patch-Fehler fangen (`_ApplyPatch`). Danach alle drei Patches aktiv.
 
 ## Hypothesen
 

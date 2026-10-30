@@ -331,8 +331,7 @@ def _PatchFittingBattle(module):
     DestroyFitting.__dict__.update(originalDestroy.im_func.__dict__)
     cls.DestroyFitting = DestroyFitting
     # UE3 calls through svcmgr's registry, which UnrealCallableClass filled with the original function.
-    import svcmgr
-    svcmgr._methodRegistry.get(cls, {})['DestroyFitting'] = DestroyFitting
+    module.UnrealCallableClass.func_globals['_methodRegistry'].get(cls, {})['DestroyFitting'] = DestroyFitting
     log.info('dustdevhook: patched dust.fittingBattle2.FittingBattle2')
 
 
@@ -358,12 +357,20 @@ class _PatchFinder(object):
         finally:
             self.loading.discard(fullname)
         module = sys.modules[fullname]
-        PATCHES[fullname](module)
+        _ApplyPatch(fullname, module)
         return module
 
 
+def _ApplyPatch(name, module):
+    # A broken patch must not break the import: without the module the battle services do not start at all.
+    try:
+        PATCHES[name](module)
+    except Exception:
+        log.exception('dustdevhook: patching %s failed', name)
+
+
 def Install():
-    for name, patch in PATCHES.items():
+    for name in PATCHES:
         if name in sys.modules:
-            patch(sys.modules[name])
+            _ApplyPatch(name, sys.modules[name])
     sys.meta_path.append(_PatchFinder())
