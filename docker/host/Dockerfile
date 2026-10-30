@@ -29,7 +29,8 @@ RUN git init -q . \
     # LLVM comes from the distribution (BUILD_LLVM=OFF); its submodule alone is several GB
     && git -c submodule."3rdparty/llvm/llvm".update=none submodule update -q --init --recursive --depth 1 --jobs 8
 
-COPY rpcs3_patches/ /src/patches/
+# Only the source patches; the game patches (*.yml) live in the data volume and must not trigger a rebuild
+COPY rpcs3_patches/*.patch /src/patches/
 RUN for p in /src/patches/*.patch; do git apply --verbose "$p"; done
 
 # Null renderer only: no Vulkan, no audio or input backends a battle host never uses

@@ -31,7 +31,7 @@ $DUST_DATA/
       dev_hdd0/game/NPUB30643/    Spiel mit gepatchter COMMON.SDAT (Dev-Hook, Log-Weiterleitung) und SAKE.INI
       dev_hdd0/home/              Benutzerprofil mit Lizenz (.rap)
       dev_flash/                  PS3-Firmware
-      patches/                    EdgeZlib-Patch
+      patches/                    EdgeZlib-Patch und LOD-/Kollisions-Patch (rpcs3_patches/host_full_outpost_lod.yml)
     cache/rpcs3/                  RPCS3.log, PPU/SPU-Caches (entsteht beim ersten Start)
     control/                      restart, stop, status.json (Watchdog)
   rpcn/                           → /data im rpcn-Container: rpcn.cfg, Zertifikat, Kontendatenbank (entsteht beim ersten Start)
