@@ -30,7 +30,7 @@ def main():
     sel.register(front, selectors.EVENT_READ, None)
     upstream = {}                                   # client address -> socket towards the host
     counts = {}
-    out = open(args.out, "a", encoding="utf-8")
+    out = open(args.out, "a", encoding="utf-8", buffering=1)      # line-buffered: survives being killed
     print("relaying %s:%d -> %s:%d, log %s" % (args.bind, args.listen, *target, args.out), flush=True)
     last_report = time.time()
     while True:

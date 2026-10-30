@@ -5,10 +5,10 @@
 Ziel: Skalierung über 5 Spieler messbar machen (CLAUDE.md Schritte 1–3). Der Host ist kein Engpass mehr (84 Ticks/s bei 5
 Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel CPU, dass auf einem PC bei ~5 Schluss ist.
 
-0. **Fake-Client weiter ausbauen (statt RPCS3-Test-Clients).** Beitritt läuft (siehe Funde). Nächstes: Spawn (Smart-Deploy-RPC)
-   und `ServerMove` auf Kanal 1. Dafür die Client-RPCs aus dem Mitschnitt (Kanal 1, c2s: reliable `db000004…`, unreliable
-   `4d13…`, `367f…`) mit den Funktions-Indizes aus dem Speicher eines echten Clients bzw. Ghidra zuordnen. Mitschnitt mit
-   Spawn und Laufen liegt in `dust_server/logs/udp_proxy.jsonl`. Danach Messreihe 8 → 16 → 32 mit Fake-Clients.
+0. **Messreihe mit Fake-Clients fortsetzen.** Spawn und Laufen gehen (siehe Funde). Nächstes: 16 → 32 Fake-Clients
+   (`--play`, je eigene Bind-Adresse 127.0.x.y), dabei Fake-Client-CPU pro Prozess messen (ab ~16 evtl. auf zweiten PC).
+   Offen: Schießen (Feuer-RPCs noch nicht zugeordnet), daher Last noch ohne Waffenfeuer; Pawn-Rückfall nach Tod/Respawn
+   ungetestet.
 1. **Billige Test-Clients (RPCS3, zurückgestellt).** Null-Client läuft (`D:\rpcs3_e`, siehe Funde), braucht aber ≥ 2 Kerne, weil die Threads aktiv
    warten. `Max SPURS Threads: 1` erledigt (2 Kerne: 47 Hz). Nächste Hebel an der Render-Kette (RenderingThread +
    rsx::thread ~170 %). `Frame limit: 30` scheidet aus (siehe Ausprobiert). Bleibt: das Rendern selbst weiter abschalten
@@ -29,6 +29,36 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Host-Last mit laufenden Fake-Clients (2026-10-30, `host_tick.py --log`, Host `D:\rpcs3` Null-Renderer, `-novsync`):**
+  alle Fake-Clients gespawnt und laufend (~26 `ServerMove`/s je Client), Mittel über 30 s:
+
+  | Fake-Clients | Ticks/s | Tick Mittel / p95 | main_thread | Prozess-CPU | RSS |
+  |---|---|---|---|---|---|
+  | 0 | 86,5 | 11,6 / 17,8 ms | 78 % | 497 % | 2425 MB |
+  | 1 | 85,3 | 11,7 / 17,4 ms | 84 % | 499 % | 2433 MB |
+  | 4 | 75,4 | 13,3 / 17,6 ms | 95 % | 500 % | 2436 MB |
+  | 8 | 69,7 | 14,3 / 20,5 ms | 95 % | 498 % | 2438 MB |
+
+  Game-Thread ab 4 Clients gesättigt, RAM praktisch konstant. Lineare Fortschreibung (~2 Ticks/s je Client) ergäbe bei 32
+  Spielern noch ~20–30 Ticks/s, muss gemessen werden. Ohne Waffenfeuer. Erste Messung vor dem Empfangs-Fix (Fake-Clients
+  sendeten bei 8 nur ~45 % der Moves) lag bei 64,3 Ticks/s für 8, also ist Move-Last messbar.
+- **Fake-Client spawnt und läuft (2026-10-30):** nötiger Ablauf (nach Join):
+  1. `ServerUpdateLevelVisibility(PackageName, true)` für alle sichtbaren Level, sonst trennt der Host bald. Namen gehen über
+     einen Name-Cache je Richtung: erste Nutzung = Cache-ID (ab 0x401) + String + FName-Nummer, danach nur −ID. Level:
+     Karten-Level mit `bNewShouldBeVisible` aus `ClientUpdateLevelStreamingStatus` (+ `_MT`, `_VI`), das `MOOD_`-Level
+     (Nummer = dessen Kanal) und je Struktur-Socket `<Struktur>_LOD0`, Nummer = Actor-Kanal des Sockets (Socket-Open nennt
+     `small07`/`OP03`/`BackDrop01` und dann die Struktur), Backdrops ohne `_LOD0`. Ein Replay der aufgezeichneten Namen
+     scheitert deshalb (andere Kanäle → Host trennt).
+  2. `InvokeSvcMethodOnBattleServer(battleServer, SpawnCharacterWithFitting, …)`, dann im selben Moment
+     `ServerSelectDefaultSpawnPoint` (Index 26 von 38) auf dem eigenen `DustControllerSharedComponent`-Kanal und
+     `ServerBeginSpawnProcess`. Ohne Spawnpunkt bricht `Dead.CheckSpawnPointIsValid` ab (`ClientNotifySpawnPointCancelled`).
+  3. Host: `InvokeSvcMethodOnClient` (Bestätigung), `ClientSetTimeLeftBeforeRespawn(~4,9 s)` + `ClientStartCheckStreaming(loc)`.
+     Client setzt `ClientLoc` auf `loc`, meldet `<Struktur>` und `<Struktur>+AU` sichtbar und schickt
+     `ServerOnStreamingFinished` (setzt `mClientReadyToSpawn`; echter Client packte es hinter ein `ServerMove`).
+  4. Nach dem Timer `Dead.DoRestartPlayer`: `ClientPreRestartPlayer` → Ack(None) + `AskForPawn` → `GivePawn` → Ack(Pawn).
+     Pawn nach ~9 s, `ServerMove` bewegt ihn (pawn_list: 600–1100 uu je 3 s). Position folgt den `*ClientAdjustPosition`.
+  Bugfix: `BitWriter.serialize_int` im Fake-Client brach mit `value + mask` statt den geschriebenen Bits ab, Längen ≥ 2048 Bit
+  waren kaputt (wohl auch Ursache früherer Replay-Abbrüche). msg 20 ist eine Name-Cache-Bestätigung (−ID), nicht nötig.
 - **Fake-Client-Prototyp tritt bei (2026-10-30, `tools/fake_client.py`):** Registriert ein Mitglied über den neuen Dev-Endpunkt
   `POST /dev/battle/fake_member/` (gleiche Teamverteilung wie echte Beitritte), dann Hello → Challenge → Login (Antwort `"0"`,
   URL mit Credential) → Welcome → Join, danach nur Acks und Keepalive (alle 50 ms). Hello, Login und Join sind bitgenau gleich
