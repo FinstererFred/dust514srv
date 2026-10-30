@@ -1,5 +1,28 @@
 # Notizen
 
+## Nächste Session (Stand 2026-10-30)
+
+Ziel: Skalierung über 5 Spieler messbar machen (CLAUDE.md Schritte 1–3). Der Host ist kein Engpass mehr (84 Ticks/s bei 5
+Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel CPU, dass auf einem PC bei ~5 Schluss ist.
+
+1. **Billige Test-Clients.** Einen Client wie den Host konfigurieren: Null-Renderer (`config_NPUB30643.yml.null_host`,
+   `Frame limit: PS3 Native`, nie `Auto` ohne eigenen Build), Patch „Listen host: disable world rendering“ und `-novsync`.
+   Zuerst mit einem Client (z. B. `D:\rpcs3_e`) prüfen: Beitritt, Spawn per `tools/press_key.ps1` (X, dann V), Bewegung und Treffer
+   kommen beim Host an. Dann CPU und RAM pro Client messen und hochrechnen, wie viele auf einen PC passen. Backups `*.before_*`
+   vor jeder Config-/Patch-Änderung.
+2. **Eingabe-Wiedergabe.** Tastatur geht nur ans Fenster mit Fokus. Kandidat: virtuelle Gamepads (ViGEmBus-Treiber, Installation
+   vorher mit dem Nutzer klären) pro Instanz plus RPCS3-Hintergrundeingabe, gesteuert per Skript (laufen, drehen, schießen).
+3. **Speicher in der emulierten PS3.** Freien Hauptspeicher (256 MB) bei 5 Spielern auslesen (z. B. `sys_memory_get_user_memory_size`
+   bzw. RPCS3-Speicherstatistik) und auf 32 hochrechnen. Harte Grenze, die keine Tick-Messung zeigt.
+4. Danach: Clients auf einem zweiten PC, Messreihe 8 → 16 → 32 mit `tools/host_tick.py`.
+
+Zustand am Ende der Session: Host `D:\rpcs3` mit Null-Renderer-Config (Vulkan-Original in
+`config_NPUB30643.yml.before_nulltick`), Weltrendering-Patch aktiv, Start mit `-novsync`. Test-Clients `D:\rpcs3_b`…`_e`
+(Vulkan, Bind 127.0.0.2–.5, CREST-Ports 8081–8084, RPCN DustTester2–5). Mess-Hilfen im Scratchpad gehen verloren; das Muster
+war: Client starten, auf `NumPlayers` warten, `host_tick.py` 30 s laufend und 8 s mit suspendierten Clients (psutil).
+Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch in den Datenordner kommt; `docker/.env` hat
+`-novsync` schon.
+
 ## Funde
 
 - **Keine Spielerobergrenze im UnrealScript (2026-10-30):**

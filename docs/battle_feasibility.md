@@ -13,10 +13,11 @@ bei jeder Session gelesen werden. Bei Bedarf gezielt nach den Stichworten in Kla
   liegen lokal vor.
 - **Entscheidung: Listen-Server (RPCS3-Host) mit gezielten RPCS3-Patches.** Ein echter Dedicated-Pfad im PS3-Binary
   ist unwahrscheinlich, ein Nachbau des Servers wäre ein Mannjahre-Projekt (UE3-Replikation aller DustGame-Klassen).
-- **Läuft:** Host plus Client 2 (zweite RPCS3-Instanz). Ambush, Skirmish, Domination mit zwei Spielern. Beitritt über die
-  Gefechtssuche, Credentials vergibt der CREST-Server. Host ohne GPU im Docker (Null-Renderer mit eigenem RPCS3-Patch).
-  Kollision fern vom Host gelöst (Patch 0.5, Test 6).
-- **Offen:** Skalierung auf viele Spieler (nur 2 getestet), Speicher und FPS bei voller Belegung, Matchende und
+- **Läuft:** Host plus bis zu 4 Clients (RPCS3-Instanzen), Teams abwechselnd verteilt. Ambush, Skirmish, Domination.
+  Beitritt über die Gefechtssuche, Credentials vergibt der CREST-Server. Host ohne GPU im Docker (Null-Renderer mit eigenem
+  RPCS3-Patch). Kollision fern vom Host gelöst (Patch 0.5, Test 6), Treffer und Kills zwischen Clients funktionieren.
+- **Host-Tick:** Ohne Weltrendering (Patch) und mit `-novsync` 84 Ticks/s bei 5 Spielern, ~12 ms pro Tick (Abschnitt 10).
+- **Offen:** Skalierung über 5 Spieler, Speicher im emulierten Hauptspeicher bei voller Belegung, Matchende und
   Belohnungen, einige Modi (siehe Abschnitt 9).
 - **Keine Bots:** Im Release-Build ist die gesamte KI-Spawn-Logik zu leeren Stubs herauskompiliert. Gegner gibt es nur
   über Mehrspieler.
@@ -180,15 +181,24 @@ Spieler; mehr als 2 Spieler; Speicher und FPS bei voller Belegung. Zurück auf 0
 
 ## 10. Gemessene Leistung des Hosts (RPCS3)
 
-| Test | FPS Host | RAM |
-|---|---|---|
-| Test 2 (Patch 0.2) | 12–16 | ca. 4,8 GB |
-| Test 4 (Patch 0.3) | 27 | 4,3 GB |
-| Test 6 (Patch 0.5) | 26 | 4,6 GB |
-| Client 2 (Vulkan) | 26 | ca. 4–4,5 GB |
+Messung von außen mit `tools/host_tick.py` (Server-Tick = Änderungen von `WorldInfo.RealTimeSeconds`, CPU je Thread, RAM).
+Stand 2026-10-30, Ryzen 9 5900X, Host mit Null-Renderer auf CCD0, Test-Clients (Vulkan) auf CCD1, Ambush.
 
-Alle mit zwei Spielern. Engine-Konfiguration: `NetServerMaxTickRate=30`. Ein UE3-Listen-Server rechnet das Spiel im Takt seines Renderings,
-ein Host unter 30 FPS liegt also schon bei 2 Spielern unter dem Ziel-Tick. Es gibt keine Messung mit mehr Spielern.
+| Host, 5 Spieler (4 gespawnt, untätig) | Ticks/s | ms pro Tick | RSS |
+|---|---|---|---|
+| Null-Renderer | 22,6 | 44 | 2,4 GB |
+| + Patch „Listen host: disable world rendering“ | 57,4 | an VSync (60) | 2,4 GB |
+| + Spielargument `-novsync` | **84** | **11,9** | 2,4 GB |
+
+- **Das Rendern bremste den Host, nicht die Spiellogik.** `rpcs3_patches/host_disable_world_rendering.yml` (nur Host) behandelt
+  `GameViewportClient.bDisableWorldRendering` als gesetzt (drei `li r3,1` ab 0x31be4c). Das eigene Bild des Hosts bleibt schwarz.
+  Kollision fern vom Host, Treffer und Kills zwischen Clients funktionieren.
+- **Die 60er-Grenze war VSync im Spiel**, nicht das RPCS3-Frame-Limit. `-novsync` (im EBOOT `UseVsync`/`novsync`) steht fest im
+  Host-Start (`restart_host.ps1`, Docker-Watchdog). Spielzeit läuft 1:1, CPU wie mit VSync (~480 %).
+- Ein untätiger gespawnter Pawn kostet ~0,1 ms (mit Weltrendering ~1,5 ms). Ein aktiver Client (Laufen, Schießen) war nicht messbar.
+  Engpass ist jetzt der Game-Thread (~1 Kern). Bei `NetServerMaxTickRate=30` bleiben ~21 ms Reserve pro Tick.
+- Im UnrealScript gibt es keine Spielerobergrenze (`DustTeamGame.AtCapacity` immer `false`); der Host startet mit `?MaxPlayers=32`.
+- Nicht gemessen: mehr als 5 Spieler, mehrere aktive Spieler, Speicher im emulierten 256-MB-Hauptspeicher. Einzelwerte: `NOTES.md`.
 
 ## 11. Bots und KI
 
@@ -222,8 +232,8 @@ Passive Drohnen-Nester per `SpawnInstallationByType` greifen nicht an. Bots wär
 
 ## 14. Offene Fragen (Priorität)
 
-1. **Skalierung:** 2 → 4 → 8 → 16 → 32 Clients messen (FPS, Tick, RAM, CPU je Thread). Bots gibt es nicht, also echte Clients oder
-   mehrere Instanzen nötig.
+1. **Skalierung:** über 5 hinaus bis 32 Clients messen (Tick, RAM, CPU je Thread), mit aktiven Spielern. Bots gibt es nicht; nötig
+   sind billige Test-Clients (Null-Renderer) mit Eingabe-Wiedergabe und eine Prüfung des 256-MB-Hauptspeichers.
 2. Nach dem Messen entscheiden, ob RPCS3 reicht oder ein Recomp-Ansatz (ps3recomp) die Tick-Rate verbessern könnte.
 3. Matchende, Belohnungen und Rückkehr in die Merc Quarters (`POST battle.completed`, `member.completed`) im CREST-Server.
 4. Acquisition-Startposition, Ambush OMS testen, Absturz beim Moduswechsel.

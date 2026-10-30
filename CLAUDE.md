@@ -28,10 +28,11 @@ daher dient der Listen-Server-Pfad des Retail-Clients (RPCS3) als Gefechtsserver
 - CCPs Gefechtsserver war derselbe UE3-Code als Windows-Dedicated-Server (nicht verfügbar). Der PS3-Client hat einen Offline-Modus
   mit allen Gefechtsdiensten im Client. Ein Dedicated-Pfad im PS3-Binary ist unwahrscheinlich.
 - **Entscheidung:** Listen-Server auf RPCS3 mit gezielten RPCS3-Patches. Ein Server-Nachbau wäre ein Mannjahre-Projekt.
-- **Läuft:** Host + 1 Client (zwei RPCS3-Instanzen), Ambush, Skirmish, Domination. Beitritt über die Gefechtssuche, Credentials über den
+- **Läuft:** Host + bis zu 4 Clients (RPCS3-Instanzen auf einem PC), Ambush, Skirmish, Domination. Beitritt über die Gefechtssuche, Credentials über den
   CREST-Server. Host ohne GPU im Docker (Null-Renderer mit RPCS3-Fix). Kollision fern vom Host gelöst (Patch 0.5, drei Code-Höhlen,
   `rpcs3_patches/host_full_outpost_lod.yml`).
-- **Gemessen:** Host ca. 26 FPS und 4,6 GB RAM bei zwei Spielern. Engine-Tickrate ist auf 30 konfiguriert. Mehr Spieler sind nicht getestet.
+- **Gemessen:** Host (Null-Renderer, Weltrendering per Patch aus, `-novsync`) 84 Ticks/s, ~12 ms pro Tick, 2,4 GB RAM bei 5 Spielern.
+  Vorher 23 Ticks/s. Engpass jetzt der Game-Thread. Engine-Tickrate ist auf 30 konfiguriert. Mehr als 5 Spieler nicht getestet.
 - **Keine Bots:** KI-Spawn-Logik ist im Release-Build herauskompiliert. Gegner gibt es nur über echte Spieler.
 - Ziel laut Nutzer: 32 Spieler (in der Beta war 32 das Limit, 48 geplant).
 
