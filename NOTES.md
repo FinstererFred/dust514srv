@@ -381,7 +381,11 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     Neu-Login nach Server-Neustart bestätigt: Stufen, Skillbuch (L0) und freie SP (363 170) bleiben erhalten. Außerdem `IndexError` in
     `dropsuitProgression.UpdateAvatarView` (`AVATAR_ICON_DATA[frame][race]`). Die Seite war vorher nie offen, wahrscheinlich ein Client-Fehler
     bei einem vierten Frame-Reiter. Noch nicht untersucht.
-    Noch offen: Ablehnung, passiver Zuwachs, Respec (`PUT` auf den `respec`-Link, vom Server noch nicht behandelt).
+    Ablehnung: Bei zu wenig SP blockt schon der Client (`uiSvcSkill.CallBackGetPopUpForUpgrade` zeigt „not enough skill points“,
+    kein `PUT`). Die serverseitige Ablehnung ist also nur im Prozess getestet, ein normaler Spieler erreicht sie nicht.
+    Passiver Zuwachs bestätigt: Aktivieren in der Auswahl → `PUT …/passiveskillgain/{id}/ {status: 1}`, „ACTIVE“. Danach steigt die SP-Anzeige
+    1 SP pro 3,6 s (24 000/Tag), Client und Server liegen nach einigen Minuten gleich.
+    Noch offen: Respec (`PUT` auf den `respec`-Link, vom Server noch nicht behandelt), `IndexError` Dropsuit-Progression.
 
 ## Hypothesen
 
