@@ -583,6 +583,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   KI-Spawns im Release herausgenommen), dann scheitert jeder Ort. Nächster Schritt: native `HandleRDVRequest` in Ghidra
   (welche Prüfung liefert InvalidLocation). Testhilfe: Dev-Controller hat `RDV <typeName> <fitting> X Y Z` (ruft
   `HandleRDVRequest(-1, …)` an beliebiger Stelle), `ShowRDVDropOff 1`, `SetDebugRDVPoints`.
+  **Ghidra (2026-10-31):** `execHandleRDVRequest` 0x14f3410 ruft vtable-Slot 0x3fc (vtable 0x1959ac8 aus dem
+  InternalConstructor 0x14e4ea8) = `FUN_006ea594`. Dort: Ergebnis 1 (NotAllowed) ohne RDV-Dienst, 2 im
+  Versorgungsdepot-Zweig ohne freien `GetRDVLocationPoint`, sonst `FUN_007cc670` (UDustSvcRDV). Die erste Prüfung dort,
+  `bl 0x0e4cb0` bei 0x7cc6ec, ist im Release ein Stub `li r3,2; blr` → **immer `RDVR_Denied_InvalidLocation`**, egal wo.
+  Danach echter Code (Abstand zu anderen RDVs `FUN_007cb9b8`, Warteschlange `FUN_007cc4a8`, Benachrichtigungen).
+  Patch 0.1 `rpcs3_patches/host_rdv_request.yml` (Aufrufstelle → `li r3,0`, Stub selbst nicht anfassen, vermutlich
+  zusammengelegt) im Windows-Host eingetragen (Sicherungen `*.before_rdv`), **ungetestet**. Offen: ob die Warteschlange
+  abgearbeitet wird und das KI-Dropship fliegt (KI-Teile könnten ebenfalls fehlen); Quoten entfallen mit dem Stub.
 - **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
   sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
   Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),

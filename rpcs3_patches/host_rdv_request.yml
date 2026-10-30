@@ -1,0 +1,31 @@
+# Entwurf (ungetestet): Fahrzeug-Anforderung (RDV) auf dem Listen-Host zulassen.
+# Nur in die Patch-Datei des HOSTS eintragen (D:\rpcs3\patches\NPUB30643_patch.yml bzw. Docker-Host).
+# Die Anforderung läuft serverseitig (DustPlayerController.DeployPendingVehicle -> native HandleRDVRequest).
+#
+# Kette (Ghidra, EBOOT 03.19):
+#   execHandleRDVRequest 0x014f3410 -> vtable ADustControllerSharedComponent (0x01959ac8) Slot 0x3fc
+#   -> FUN_006ea594 (HandleRDVRequest): Versorgungsdepot-Zweig (GetRDVLocationPoint) oder
+#   -> FUN_007cc670 (UDustSvcRDV, Anforderung prüfen und in die Warteschlange stellen)
+#   -> bl FUN_000e4cb0 = "li r3,2; blr": die Prüfung ist im Release-Build ein Stub und liefert immer
+#      RDVR_Denied_InvalidLocation (2). Ergebnis != 0 -> Abbruch, Fitting zurück ins Inventar.
+#   Danach echter Code: Abstand zu anderen RDVs (FUN_007cb9b8), Warteschlange (FUN_007cc4a8), Benachrichtigungen.
+#
+# Der Stub ist vermutlich mit anderen "return 2"-Funktionen zusammengelegt, deshalb wird die Aufrufstelle
+# gepatcht, nicht der Stub:
+#   0x007cc6ec  4b9185c5  bl 0x000e4cb0  ->  38600000  li r3,0   (RDVR_Accepted)
+#
+# Nebenwirkung: Die herausgekürzte Prüfung enthielt vermutlich auch die Quoten (Team, Trupp, Spieler, War Points).
+# Offen: ob die Warteschlange auf dem Host abgearbeitet wird und das KI-Dropship (DustAIBehaviour_RDV) fliegt.
+
+Version: 1.2
+
+PPU-ae3f946dfcb103b782f73f1cc5f90587e652f439:
+  "Listen host: allow vehicle requests (RDV)":
+    Games:
+      "DUST 514":
+        NPUB30643: [ 03.19 ]
+    Author: "Dust 514 RPCS3 research"
+    Patch Version: 0.1
+    Notes: "Host only. The RDV request validation is a release-build stub that always returns RDVR_Denied_InvalidLocation. Treat it as accepted so the request is queued."
+    Patch:
+      - [ be32, 0x007cc6ec, 0x38600000 ] # li r3,0 (was bl 0x000e4cb0)
