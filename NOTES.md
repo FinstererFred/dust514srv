@@ -544,6 +544,15 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Hypothesen: Platzsuche (Trace nach oben/unten) scheitert auf dem Host, weil dort Kollision oder Landezonen fern vom
   Host-Pawn fehlen (vgl. LOD-Kollision, Patch 0.5), oder Ort ungeeignet (Deckung, Hang). Nächste Tests: auf freier, ebener
   Fläche anfordern, einmal nahe am Host-Spawn; in Ghidra/UPK den String bzw. `DeployPendingVehicle` suchen.
+  **Nachtrag:** Auch auf offenem Gelände abgelehnt (Nutzer). UnrealScript (`DUSTGAME.XXX`, `uscript.py`):
+  `DustPlayerController.DeployPendingVehicle` checkt das Fitting aus und ruft die **native**
+  `DustControllerSharedComponent.HandleRDVRequest(charID, typeID, module, Location des Controllers)`; Ergebnis ≠ 0
+  (`ERDVRequestResult`, hier `RDVR_Denied_InvalidLocation`) → Rückgabe. Das RDV ist ein KI-geflogenes Dropship
+  (`DustAIBehaviour_RDV`, `DustAIMgr.m_pRDVWorld`, `m_mRDVSectionsNavData`, `m_pRDVStreamingManager`,
+  `m_aRDVLocationPoints`). Hypothese: Die RDV-Navigation der KI fehlt auf dem Listen-Host (nicht geladen oder wie die
+  KI-Spawns im Release herausgenommen), dann scheitert jeder Ort. Nächster Schritt: native `HandleRDVRequest` in Ghidra
+  (welche Prüfung liefert InvalidLocation). Testhilfe: Dev-Controller hat `RDV <typeName> <fitting> X Y Z` (ruft
+  `HandleRDVRequest(-1, …)` an beliebiger Stelle), `ShowRDVDropOff 1`, `SetDebugRDVPoints`.
 - **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
   sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
   Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),
