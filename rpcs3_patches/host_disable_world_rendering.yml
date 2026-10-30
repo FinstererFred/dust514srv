@@ -1,4 +1,5 @@
-# Entwurf (Funktionstest mit Clients offen): Listen-Host zeichnet die Welt nicht mehr.
+# Getestet 2026-10-30: Listen-Host zeichnet die Welt nicht mehr. Installiert am Host: 59 Ticks/s, Kollision fern vom Host
+# und Treffer zwischen Clients funktionieren.
 # Nur in die Patch-Datei des HOSTS eintragen (D:\rpcs3\patches\NPUB30643_patch.yml bzw. Docker-Host), nie bei Clients.
 #
 # Messung 2026-10-30 (Null-Renderer-Host, nur Host): GameViewportClient.bDisableWorldRendering per Speicher gesetzt
