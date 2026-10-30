@@ -732,7 +732,7 @@ async function pageRewards(el) {
 async function pageWallet(el) {
   const cfg = clone(await api("/api/content/wallet"));
   el.replaceChildren(
-    head("Wallet", "Balance of the offline character shown by the client (applies to every player using CCP's offline character)."),
+    head("Wallet", "Balance of the offline character shown by the client (applies to every player using CCP's offline character). With DUST_CHAR_STORE=1, own characters have their own ISK; AUR stays shared here."),
     h("div", { class: "card" },
       h("div", { class: "form" },
         field("ISK", numberInput(cfg.isk, (v) => { cfg.isk = v || 0; })),

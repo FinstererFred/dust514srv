@@ -222,6 +222,19 @@ class CharacterMissing(Exception):
     pass
 
 
+def own_character_in_path(req):
+    """The store's character whose ID is in the path (/characters/N/..., /inventory/N/owner/N/..., ...), or None.
+
+    Only the owner gets these documents: the fallback cannot tell public from private ones, and the private ones
+    (mail, fittings, inventory, wallet) are the majority. Others get a 404 (missing:character) in the log.
+    """
+    if not CHAR_STORE:
+        return None
+    ids = {int(n) for n in re.findall(r"(?<!\d)(\d{10})(?!\d)", req["path"])}
+    ids = [n for n in ids if store.FIRST_CHARACTER_ID <= n < store.FIRST_CHARACTER_ID + 100_000_000]
+    return own_character(req, ids[0], private=True) if ids else None
+
+
 @route("GET", r"^/decode/$")
 def token_decode(req):
     user_id = (current_user(req) or {"id": USER_ID})["id"]
@@ -717,8 +730,11 @@ def loyalty_store_offers(req):
 
 
 def isk_account(req, owner_id, key, wallet):
+    # ISK of our own characters is per character (store.py); CCP's offline characters share wallet.json.
+    char = own_character(req, owner_id, private=True)
     href = f"{req['base']}/accounts/{owner_id}/{key}/"
-    return {"href": href, "id": key, "balance": wallet["isk"], "transactions": f"{href}transactions/"}
+    return {"href": href, "id": key, "balance": char["isk"] if char else wallet["isk"],
+            "transactions": f"{href}transactions/"}
 
 
 @route("GET", r"^/accounts/(\d+)/$")
@@ -731,7 +747,7 @@ def account(req):
         if currency == "AUR":
             balance = wallet["aur"]
         else:
-            balance = sum(store.get("balance", 0) for store in content.load("loyalty")["stores"].values())
+            balance = sum(lp.get("balance", 0) for lp in content.load("loyalty")["stores"].values())
         return {"id": account_id, "currency": currency, "balance": balance, "freeBalance": balance, "totalSpent": 0,
                 "href": f"{req['base']}{req['path']}", "transactions": {"href": f"{req['base']}{req['path']}transactions/"}}
     # A character's accounts (myCharactersClient._GetAccountIfNeeded), the wallet first.
@@ -1013,20 +1029,13 @@ class CrestApp:
             "method": method, "path": path, "query": dict(urllib.parse.parse_qsl(url.query)),
             "headers": headers, "body": parse_body(headers, body), "base": base, "peer": peer,
         }
-        result, source = None, None
-        for m, regex, func in _routes:
-            if m == method and regex.match(path):
-                try:
-                    result, source = func(req), f"own:{func.__name__}"
-                except Unauthorized:
-                    return 401, "application/json; charset=utf-8", b'{"message": "unknown token"}', "unauthorized", {}
-                except CharacterMissing as e:
-                    return (404, "application/json; charset=utf-8", b'{"message": "unknown character"}',
-                            f"missing:character:{e.args[0]}", {})
-                break
-        if result is OFFLINE or source is None:
-            found, result = offline_bridge.dispatch(method, path, parameters=req["query"], resource=req["body"])
-            source = "ccp_offline" if found else None
+        try:
+            result, source = self.dispatch(req)
+        except Unauthorized:
+            return 401, "application/json; charset=utf-8", b'{"message": "unknown token"}', "unauthorized", {}
+        except CharacterMissing as e:
+            return (404, "application/json; charset=utf-8", b'{"message": "unknown character"}',
+                    f"missing:character:{e.args[0]}", {})
 
         if source is None:
             return 404, "application/json; charset=utf-8", b'{"message": "not implemented"}', "missing", {}
@@ -1042,3 +1051,24 @@ class CrestApp:
         # offline.framework.MkURL (VGS store data) builds links without a port.
         text = text.replace('"http://127.0.0.1/', f'"{base}/')
         return 200, content_type_for(headers), text.encode("utf-8"), source, {}
+
+    def dispatch(self, req):
+        """(result, source): our handler, else CCP's offline handler (source None if there is neither)."""
+        for m, regex, func in _routes:
+            if m == req["method"] and regex.match(req["path"]):
+                result = func(req)
+                if result is not OFFLINE:
+                    return result, f"own:{func.__name__}"
+                break
+        char = own_character_in_path(req)
+        if char:
+            # Stage 1b: CCP's handlers answer every character ID with their offline character's data, so ask for
+            # that one and swap the IDs (mail, chat, quests, fittings, skills, inventory, corporation member ...).
+            path = re.sub(rf"\b{char['id']}\b", str(OFFLINE_CHARACTER_ID), req["path"])
+            found, result = offline_bridge.dispatch(req["method"], path, parameters=req["query"], resource=req["body"])
+            if found and not isinstance(result, Exception):
+                result = rebind(result, char["user_id"], char["id"])
+            return result, ("ccp_offline:rebind" if found else None)
+        found, result = offline_bridge.dispatch(req["method"], req["path"], parameters=req["query"],
+                                                resource=req["body"])
+        return result, ("ccp_offline" if found else None)

@@ -1,7 +1,7 @@
 # Charaktere, Skills und Skill-Training vom Server – Umsetzungsplan
 
-Stand 2026-10-30. **Stufe 1a ist im Code umgesetzt**, hinter dem Schalter `DUST_CHAR_STORE=1` (standardmäßig aus). Sie ist
-im Prozess getestet, in RPCS3 noch nicht (Funde und Testhinweise in `NOTES.md`). Die Stufen 1b bis 5 sind offen. Außerdem ist
+Stand 2026-10-30. **Stufe 1 (1a und 1b) ist im Code umgesetzt**, hinter dem Schalter `DUST_CHAR_STORE=1` (standardmäßig
+aus). Sie ist im Prozess getestet, in RPCS3 noch nicht (Funde und Testhinweise in `NOTES.md`). Die Stufen 2 bis 5 sind offen. Außerdem ist
 der AUR-Store bereinigt (Loyalty-Items standardmäßig aus). Das Dokument beschreibt Ziel, Reihenfolge und offene Entscheidungen.
 
 Zur AUR-Wirtschaft (Quellen, Limits, Store-Bewertung, Euro-Einordnung) siehe `docs/aur_economy.md`. Sie wird erst ab Stufe 5 gebraucht.
@@ -153,6 +153,11 @@ Kerndokumente (Punkte 1–6, 8); **1b** Template-Ersatz für die übrigen Endpun
 Schalter `DUST_CHAR_STORE=1`, Host-Konten über `DUST_HOST_ACCOUNTS` (Standard `DustHost`; sie und der alte Token bleiben auf
 CCP-Offline). Unser eigener Charakterbereich (ab 2100100000) ist strikt: Eine unbekannte ID gibt 404, ebenso ein fremder
 Charakter bei privaten Dokumenten. Öffentliche Dokumente sind für alle lesbar. Tests: `python -m unittest discover -s dust_server/tests`.
+
+**Umsetzung 1b (2026-10-30):** Statt einzelner Handler gibt es einen allgemeinen Rückfall in `CrestApp.dispatch`. Ein Pfad
+mit eigener Charakter-ID geht an CCPs Handler mit 2100001611, danach wird `rebind` angewendet. Er gilt nur für den Besitzer,
+weil sich öffentlich und privat dort nicht unterscheiden lassen. ISK pro Charakter in `/accounts/{id}/…`. Die Wallet-Seite im
+Admin weist darauf hin; die Charakter-Seite folgt in Stufe 2.
 
 **Prüfen:** Zwei RPCN-Konten (FinstererFred, DustTester2) loggen ein, sehen je einen eigenen Charakter mit eigenem
 Namen; Neustart des Servers → Charaktere noch da; nach über einer Stunde im Spiel (Token-Erneuerung) weiterhin

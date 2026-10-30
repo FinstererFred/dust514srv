@@ -158,6 +158,11 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   - Für den RPCS3-Test: Lokal ist FinstererFred der Host → `DUST_HOST_ACCOUNTS=FinstererFred`. Test-Clients starten mit
     `-autologincharindex=1`, haben mit Schalter aber nur einen Charakter → Index 0 verwenden.
   - ISK in der Charakterliste kommt schon aus der Datenbank (25 000), die Wallet-Seiten noch aus `wallet.json` (Stufe 1b).
+- **Stufe 1b (2026-10-30), ebenfalls hinter dem Schalter:** Alle übrigen Pfade mit einer eigenen Charakter-ID (Mail, Chat,
+  Quests, Fittings, Skills, Inventar, Corp-Mitglied …) fragen CCPs Handler mit 2100001611 und tauschen die IDs aus
+  (Log-Quelle `ccp_offline:rebind`). Nur der Besitzer bekommt sie, sonst 404. ISK unter `/accounts/{id}/` kommt aus
+  `characters.isk`, AUR und LP bleiben global. Wieder im Prozess geprüft: ohne Schalter identisch zum Stand vor 1a (24
+  Anfragen), mit Schalter keine Offline-IDs mehr in den Antworten eigener Charaktere.
 
 ## Hypothesen
 
@@ -196,7 +201,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 - **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
   sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
   Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),
-  ist aber gemeinsam für alle, nach einem Neustart weg und vergibt beim ersten POST ID 101 doppelt. Offen sind drei Punkte:
+  ist aber gemeinsam für alle, nach einem Neustart weg und vergibt beim ersten POST ID 101 doppelt. **Der POST scheitert in
+  unserem CATMA-Dienst ohnehin** (`GetDisplayNameByID` braucht den Lokalisierungsdienst: „sake application instance has not
+  been initialized yet“, geprüft 2026-10-30, auch mit 2100001611). Neue Fittings im Spiel anzulegen geht also heute nicht. Der
+  Weg führt über eigene Fittings vom Server. Offen sind drei Punkte:
   Bietet der Fitting-Bildschirm Fahrzeuge an? Liefert der Listen-Server das RDV aus? In welchen Modi gibt es Fahrzeuge
   (vermutlich Skirmish/Domination, nicht Ambush)? Erster Versuch im Spiel, sonst fertige Fittings vom Server
   (`content/fittings.json`, Vorgriff auf Stufe 5).
