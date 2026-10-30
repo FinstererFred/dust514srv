@@ -60,7 +60,7 @@
   bestimmt erst der Game-Thread (64 % eines Kerns ≈ 11 ms pro Tick bei 5 Spielern). Konsolenbefehl `set` wirkt im
   Retail-Build nicht, Show-Flags sind herauskompiliert, kein Skript setzt das Flag. Patch-Entwurf:
   `rpcs3_patches/host_disable_world_rendering.yml` (drei `rlwinm` → `li r3,1` in der Viewport-Funktion ab 0x31b808).
-- **Patch „Listen host: disable world rendering“ getestet (2026-10-30):** Im Host installiert (`D:pcs3\patches`, Backup
+- **Patch „Listen host: disable world rendering“ getestet (2026-10-30):** Im Host installiert (`D:\rpcs3\patches`, Backup
   `*.before_worldrender`), RPCS3-Log meldet „Applied patch“. Nur Host: 59,2 Ticks/s (p95 19,8 ms, Prozess-CPU 478 %, RSS 2,36 GB).
   2/3 Spieler (Clients noch im Deploy-Bildschirm): 55,5/57,1 laufend, 59,0/59,2 angehalten. Funktionstest bestanden: Kollision
   fern vom Host in Ordnung (Nutzer lief herum), Treffer zwischen zwei Clients verschiedener Teams kommen an, Client c hat
