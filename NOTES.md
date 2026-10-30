@@ -25,6 +25,23 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Fake-Client machbar: Gefechtsverkehr ist unverschlüsseltes Standard-UE3 (2026-10-30):** Mitschnitt mit `tools/udp_proxy.py`
+  (`fake_battle.json` `target_listen.port` vorübergehend auf 17778, Proxy leitet an 7777 weiter; Log
+  `dust_server/logs/udp_proxy.jsonl`), Auswertung mit `tools/ue3_packets.py`. Client e (Null-Renderer): Login, Spawn, Laufen.
+  - Alle 17.785 Pakete zerlegen sich mit dem Standard-Paketaufbau aus `UNetConnection::ReceivedPacket` (Bitstrom LSB-first,
+    PacketId 14 Bit, Acks pro Paket, Bunch-Header, MaxPacket 512). Keine Verschlüsselung, keine Kompression. Klartext sichtbar:
+    Login-URL, Klassen-/Archetyp-Namen (`UPackageMapSeekFree`: Objekte über Namen, kein GUID-Abgleich), Teamnamen.
+  - Handshake (Kanal 0, Big-Endian-Ints): Client Hello (msg 0, Konstanten, wörtlich kopierbar) → Host Challenge (msg 3,
+    `87C55F50`) → Client Login (msg 4: NetSpeed 20000, Challenge-Antwort nur `"0"`, URL
+    `:<port>/LoginScene?credential=…?Team=0?…?Name=DustPlayer?SeekFreeLoading=1?Version=2.13.0.249`) → Host Welcome (msg 11:
+    `MN_CRATERS01`, `DustGame.DustSkirmishGame`) → Client msg 9 (wohl Join). Danach in beide Richtungen viele msg 20 mit
+    fortlaufenden negativen IDs (`fffffbff`, `fffffbfe` …), vermutlich CCPs `NetObjConfirm` (Namen `NetObjConfirm`,
+    `NetObjRemoteDestroy`, `PktSim` stehen in der NMT-Namensliste des EBOOT).
+  - Last pro Client (1 Spieler, gespawnt, kurz gelaufen): je Richtung ~55 Pakete/s, ~1–1,4 kB/s. Kanal 1 (Actor, vermutlich
+    PlayerController) trägt fast alles; der Host öffnet 297 Actor-Channels für einen Client.
+  - Offen für einen Fake-Client: Bedeutung von msg 20 (muss der Client Objekte bestätigen?), Actor-Channel des eigenen
+    PlayerControllers erkennen, RPC-Kodierung von `ServerMove`, Spawn (Smart Deploy) und Feuern (Funktions-Index im
+    Bunch, gepackte Parameter). Credential kann der eigene CREST-Server direkt ausstellen (`register_listen_member`).
 - **Null-Renderer-Test-Client funktioniert, ist aber nicht billig (2026-10-30, `D:\rpcs3_e`):** Config wie Host (Null, `PS3 Native`,
   Depth-Buffer aus, Backup `*.before_nullclient`), Patch „disable world rendering“ an (LOD-Patch aus), Start mit oder ohne
   `-novsync`. Beitritt nach ~1,5 min, Spawn mit V (X nur nach einem Disconnect), Bewegung (W) kommt beim Host an. Treffer
