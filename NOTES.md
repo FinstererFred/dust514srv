@@ -395,7 +395,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   - CCPs Offline-Handler liefert für jede Corp-ID „Amarr Templars“. Mit Schalter setzen wir für 1000214 „Seituoda Taskforce Command“
     und für 1000216 „Crux Special Tasks Group“ ein (Namen aus den Offline-Charakteren 2 und 3).
   - Im Prozess geprüft (Wegwerf-DB): Stammdaten, Erstellen, Ablehnungen (Name doppelt/zu kurz, vierter Charakter, Löschen zu früh),
-    Countdown, Abbrechen, Löschen, Name danach wieder frei. Parität ohne Schalter unverändert. In RPCS3 noch offen.
+    Countdown, Abbrechen, Löschen, Name danach wieder frei. Parität ohne Schalter unverändert.
+  - **RPCS3 (DustTester2):** Stammdaten werden geladen (`/races/`, `/bloodlines/`, `/specialties/`, `/portraits/mercenary/`), ein
+    vergebener Name gibt das Popup (403), Anlegen klappt (2100100001, Vherokior). Wählen und Laden in die Quarters ohne neue Fehler.
+    Ohne Familienname schickt der Client `"name "` mit Leerzeichen am Ende, das wird bereinigt. Löschen bestätigt: Terminate →
+    `POST {prepareDelete: true}`, Countdown 60 s, dann `DELETE` → 200, der Platz ist wieder leer (`deleted = 1`), keine Client-Fehler.
+    Noch offen: Löschen abbrechen in RPCS3, erster Login eines neuen Kontos ohne Charakter (drei leere Plätze).
 
 ## Hypothesen
 
