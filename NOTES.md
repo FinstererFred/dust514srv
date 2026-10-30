@@ -400,7 +400,8 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     vergebener Name gibt das Popup (403), Anlegen klappt (2100100001, Vherokior). Wählen und Laden in die Quarters ohne neue Fehler.
     Ohne Familienname schickt der Client `"name "` mit Leerzeichen am Ende, das wird bereinigt. Löschen bestätigt: Terminate →
     `POST {prepareDelete: true}`, Countdown 60 s, dann `DELETE` → 200, der Platz ist wieder leer (`deleted = 1`), keine Client-Fehler.
-    Noch offen: Löschen abbrechen in RPCS3, erster Login eines neuen Kontos ohne Charakter (drei leere Plätze).
+    Abbrechen bestätigt (`prepareDelete: false` setzt den Countdown zurück, erneutes Terminate startet ihn neu).
+    Noch offen: erster Login eines neuen Kontos ohne Charakter (drei leere Plätze).
 
 ## Hypothesen
 
