@@ -427,9 +427,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     Stufe 5, die Werte-Berechnung (`ue3Context.GetRelevantSkills`) keine Skills. Bisher kämpfte also jeder ohne Skill-Boni.
   - Gefechts-IDs laufen um. Ein späteres Mitglied ohne Skills auf derselben ID bekommt den `OfflineConnect`-Stand zurück.
   Im Prozess geprüft (Wegwerf-DB, Minmatar-Charakter: 8 Start-Skills, Brutor Vanguard; fremder Token und Offline-ID → keine
-  Skills), Hook mit py27 kompiliert, `COMMON.SDAT` von `D:\rpcs3` neu gepatcht. **In RPCS3 offen:** Client 2 mit eigenem
-  Charakter beitreten, Host-`client.log` auf „skills updated“ prüfen, Spawn mit einem Fitting ohne passende Skills (sollte
-  abgelehnt werden), Schild/Panzerung im Gefecht. Docker: `export_host_data.ps1` erneut ausführen.
+  Skills), Hook mit py27 kompiliert, `COMMON.SDAT` von `D:\rpcs3` neu gepatcht.
+  **RPCS3 (2026-10-30, Host A + Client B, DustTester2 mit „212“, Minmatar, nur Start-Skills):** Host meldet
+  `skills updated for character 2100001613 (212): 8 skills`. Spawn mit Militia-Fitting (354941 Dropsuit, 353120 Gewehr,
+  368949) geht durch `_CheckFittingValid` (prüft gegen `skillBattle.GetKnownSkills`, also die echten Skills). Gegenprobe mit
+  einem Fitting ohne passende Skills ist für einen normalen Spieler nicht erreichbar, der Client bietet nur gültige Fittings an.
+  **Falle:** Mit `-autologinserver` setzt der Client `skipPSN` (`login.py`) und meldet sich mit Benutzername und Passwort an,
+  also ohne RPCN-Ticket → gemeinsamer Offline-Token, Offline-Charaktere. Tests mit eigenen Charakteren nur ohne Autologin.
+  Offen: Schild/Panzerung im Gefecht mit Skill-Boni vergleichen. Docker: `export_host_data.ps1` erneut ausführen.
 
 ## Hypothesen
 

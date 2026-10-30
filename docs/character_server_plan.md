@@ -272,7 +272,8 @@ Host. Die Gefechts-IDs bleiben im Offline-Bereich (Punkt 4 nicht umgesetzt), Inv
 also. Abweichung: Punkt 2 entfällt, der Host bleibt laut Offener Frage 1 ein Offline-Charakter mit „alles Stufe 5“. Weil die
 IDs umlaufen, bekommt ein Mitglied ohne Skills (Offline-Charakter, Fake-Client) den Stand von `OfflineConnect` zurück. Fund:
 `OfflineConnect` gibt `_pystims` nie Skills (leerer `skillDataCache`), Offline-Spieler kämpfen also ohne Skill-Boni, eigene
-Charaktere jetzt mit ihren echten. Nur im Prozess geprüft, in RPCS3 offen.
+Charaktere jetzt mit ihren echten. In RPCS3 bestätigt: Host übernimmt die Skills, Spawn mit passendem Fitting geht durch die
+Prüfung. Test-Clients mit eigenem Charakter nur ohne `-autologinserver` starten (Autologin umgeht RPCN).
 
 **Prüfen:** Client 2 mit einem Charakter ohne z. B. Schwere-Dropsuit-Skill → Fitting wird abgelehnt bzw.
 Werte (Schild/Panzerung) entsprechen den Skills; `client.log` des Hosts zeigt „skills updated for character“.
