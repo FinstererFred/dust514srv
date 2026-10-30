@@ -5,11 +5,10 @@
 Ziel: Skalierung über 5 Spieler messbar machen (CLAUDE.md Schritte 1–3). Der Host ist kein Engpass mehr (84 Ticks/s bei 5
 Spielern), begrenzend sind jetzt die Test-Clients: Vulkan-Clients kosten so viel CPU, dass auf einem PC bei ~5 Schluss ist.
 
-1. **Billige Test-Clients.** Einen Client wie den Host konfigurieren: Null-Renderer (`config_NPUB30643.yml.null_host`,
-   `Frame limit: PS3 Native`, nie `Auto` ohne eigenen Build), Patch „Listen host: disable world rendering“ und `-novsync`.
-   Zuerst mit einem Client (z. B. `D:\rpcs3_e`) prüfen: Beitritt, Spawn per `tools/press_key.ps1` (X, dann V), Bewegung und Treffer
-   kommen beim Host an. Dann CPU und RAM pro Client messen und hochrechnen, wie viele auf einen PC passen. Backups `*.before_*`
-   vor jeder Config-/Patch-Änderung.
+1. **Billige Test-Clients.** Null-Client läuft (`D:\rpcs3_e`, siehe Funde), braucht aber ≥ 2 Kerne, weil die Threads aktiv
+   warten. Nächster Hebel, je eine Änderung: weniger SPU-Threads (`Max SPURS Threads` 6 → 2/1) und RPCS3-Wartelogik (SPU-
+   Loop-Detection, Thread-Scheduler). Ziel: ein Client auf 1 Kern bei ≥ 20 Hz und Spielzeit 1,0. Dann die übrigen Clients
+   (b–d) umstellen.
 2. **Eingabe-Wiedergabe.** Tastatur geht nur ans Fenster mit Fokus. Kandidat: virtuelle Gamepads (ViGEmBus-Treiber, Installation
    vorher mit dem Nutzer klären) pro Instanz plus RPCS3-Hintergrundeingabe, gesteuert per Skript (laufen, drehen, schießen).
 3. **Speicher in der emulierten PS3.** Freien Hauptspeicher (256 MB) bei 5 Spielern auslesen (z. B. `sys_memory_get_user_memory_size`
@@ -25,6 +24,22 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Null-Renderer-Test-Client funktioniert, ist aber nicht billig (2026-10-30, `D:\rpcs3_e`):** Config wie Host (Null, `PS3 Native`,
+  Depth-Buffer aus, Backup `*.before_nullclient`), Patch „disable world rendering“ an (LOD-Patch aus), Start mit oder ohne
+  `-novsync`. Beitritt nach ~1,5 min, Spawn mit V (X nur nach einem Disconnect), Bewegung (W) kommt beim Host an. Treffer
+  ungetestet. Ohne Bild prüft `tools/pawn_list.py` Spawn und Position (WorldInfo.PawnList; auf einem Client hat nur der
+  eigene Pawn einen Controller). Gemessen mit `host_tick.py --exe <client>` (30 s, gespawnt, untätig, ohne Pinning):
+
+  | Client | Hz | Prozess-CPU | RSS |
+  |---|---|---|---|
+  | Vulkan (d) | 21,6 | 671 % | 4,5 GB (private 5,7 GB) |
+  | Null, `-novsync` (e) | 85,8 | 506 % | 2,4 GB |
+  | Null, VSync (e) | 59,4 | 493 % | 2,4 GB |
+
+  Die Frame-Grenze spart keine CPU: RenderingThread (88 %), rsx::thread (79 %) und die SPURS-Kernel (~42 %) warten aktiv.
+  Mit Affinität (VSync): 1 Kern (2 logische) 6 Hz, Spielzeit 0,93, unbrauchbar; 2 Kerne 27 Hz, Spielzeit 1,0; 4 Kerne 60 Hz.
+  Ein Client braucht also mindestens 2 Kerne, auf dem 5900X neben dem Host (CCD0) nur ~3 Clients auf CCD1. Host blieb bei
+  83–88 Ticks/s mit einem Null-Client; mit zusätzlichem ungepinntem Vulkan-Client fiel er auf 69,5 (CPU-Konkurrenz).
 - **Keine Spielerobergrenze im UnrealScript (2026-10-30):**
   - `DustTeamGame.AtCapacity` ist überschrieben und gibt immer `false` zurück. Die UE3-Prüfung `NumPlayers >= MaxPlayers` in
     `GameInfo.AtCapacity` greift damit nie. `DustTeamGame.Login` weist nur ab, wenn Charakter-ID oder Character-URI fehlen,
