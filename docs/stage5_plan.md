@@ -31,9 +31,9 @@ duration, warpoints, consumed, nonConsumed]`, Clone-Verluste). Wer früher geht,
    dem Match anzeigt (Ergebnisbildschirm/Battle-Report, eventuell eigenes Dokument). Rückkehr in die Merc Quarters
    ist `CLAUDE.md` Schritt 5 und gehört dazu.
 
-**Stand 2026-10-30:** Punkte 2–6 umgesetzt und im Prozess geprüft (Details in `NOTES.md`), Punkt 1 und die
-Abnahme in RPCS3 stehen aus. Verluste zählt der Dev-Hook über `fittingBattle2.DestroyFitting`, weil der Host kein
-Inventar führt.
+**Stand 2026-10-31: fertig, in RPCS3 abgenommen** (Skirmish, Matchende per Dev-Befehl `SetWinner 1 0`, Details in
+`NOTES.md`). Der Listen-Host löst `OnBattleServerStoppedFromUnreal` selbst aus. Verluste zählt der Dev-Hook über
+`fittingBattle2.DestroyFitting`, weil der Host kein Inventar führt. Ungetestet: Belohnung mit War Points > 0.
 
 Fertig, wenn: Nach einem Ambush in RPCS3 hat der Charakter mehr SP und ISK, verbrauchte Granaten/Nanohives fehlen im Inventar,
 das Log zeigt die Buchung pro Spieler.

@@ -500,6 +500,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   `OnEndOfMatchResults` per `InvokeSvcMethodOnClientAsync` kommt an, Client b öffnet `endOfMatch2`. Klonverluste 0/0
   (keine Tode). Beim Host-Spieler fehlte `dustClient.endOfMatchResults` (wird nur beim Beitritt gesetzt), Hook legt es
   jetzt an (beim nächsten Host-Start aktiv). Offen: Belohnung > 0 mit Spielzeit ≥ 60 s, Rückkehr in die Merc Quarters.
+  **Stufe 5b abgenommen (2026-10-31, dritter Lauf, 123 s, ein Tod, `SetWinner 1 0`):** Klone 0/1, Buchung „won: 0 WP,
+  +500 SP, +100000 ISK, lost {367456: 1}“, Charakter 2100100003 danach 500 500 SP / 105 380 ISK. `endOfMatch2` auf
+  Client b und beim Host-Spieler, „To Merc Quarters“ → `QuitToMercQuarters` → zurück im Quartier. War Points blieben 0
+  (keine Gegner); Formel mit WP > 0 ungetestet. Ungebuchte Zeile vom abgestürzten zweiten Lauf bleibt in `battle_members`.
 
 ## Hypothesen
 
