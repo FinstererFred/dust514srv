@@ -147,6 +147,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Hypothesen
 
+- **Host rendert trotz Weltrendering-Patch weiter (2026-10-30):** Host, 2 Spieler, 84 Ticks/s: RenderingThread 81 %, main_thread
+  78 %, rsx::thread 59 %, `_gcm_intr_thread` 27 %, SPURS-Kernel je 37–46 %. `bDisableWorldRendering` spart nur die 3D-Szene;
+  HUD/Canvas, Scaleform, Post-Processing, Clear und Flip laufen weiter. Kostet ~1,7 Kerne pro Host-Instanz (wichtig für mehrere
+  Hosts pro Maschine) und bremst den Tick möglicherweise noch über die Frame-Synchronisation Game-/Render-Thread. Hebel erst am
+  Null-Client testen (gefahrlos), dann am Host mit Tick- und Kollisionsmessung. `Max SPURS Threads` am Host nur mit Messung
+  senken: dort laufen eventuell Physik-/Animations-Jobs, die der Server braucht.
 - Der Tick am Host hängt an der Render-Kette (Game-Thread wartet auf `RenderingThread` → RSX-FIFO in RPCS3), auch mit
   Null-Renderer. Mehr Pawns bedeuten mehr Zeichenbefehle. Hebel wäre, das Rendern am Host weitgehend abzuschalten (UE3
   `show`-Flags, Viewport nicht zeichnen, Patch im RenderingThread). Ein Recompiler für den PPU-Code würde daran wenig ändern.
