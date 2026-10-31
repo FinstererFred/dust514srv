@@ -21,6 +21,9 @@ bei jeder Session gelesen werden. Bei Bedarf gezielt nach den Stichworten in Kla
   Belohnungen, einige Modi (siehe Abschnitt 9).
 - **Keine Bots:** Im Release-Build ist die gesamte KI-Spawn-Logik zu leeren Stubs herauskompiliert. Gegner gibt es nur
   über Mehrspieler.
+- **Fahrzeuge (RDV):** Anforderung per Host-Patch `rpcs3_patches/host_rdv_request.yml` (0.2). Die Prüfung ist im Release
+  ein Stub (immer InvalidLocation), die Auslieferung fehlt. Der Patch nimmt an und spawnt das Fahrzeug direkt neben dem
+  Anforderer (`SpawnAndFitVehicle`, kein Dropship, keine Quoten). LAV in Skirmish bestätigt.
 
 ## 2. Ablauf im Client (vom Menü bis zur Verbindung)
 

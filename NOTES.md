@@ -598,7 +598,9 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   (`FUN_007b61a4`, r4 typeID, r5 Fitting, r6/r7 Ort, r8/r9 Rotation, r10 Team) und `SpawnByTypeImpl` (`FUN_0079f21c`).
   **Patch 0.2:** Code-Höhle auf 0x7cbcc4 spawnt das Fahrzeug aus dem Eintrag (+500 in X und Z, kein Dropship),
   `dustdevhook` löscht das pending-Fitting nach angenommener Anforderung (Checkout läuft synchron davor). Im Host
-  geladen, Spiel-Test offen. Unklar, ob die Abarbeitung läuft (nur bei RDV-Verzögerung `svc+0x74` > 0).
+  geladen. **Test 0.2 (2026-10-31, Client b, Skirmish): LAV wird gespawnt und funktioniert.** Die Abarbeitung läuft
+  also (Verzögerung > 0). Offen: Panzer und Dropships, Ort in engem Gelände (+500 kann in Wände fallen), fehlende
+  Quoten, Docker-Host (Patch fehlt in dessen Datenvolume), Client-SDATs ohne neuen dustdevhook.
 - **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
   sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
   Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),
