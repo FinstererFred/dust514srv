@@ -15,7 +15,14 @@
 #   0x007cc6ec  4b9185c5  bl 0x000e4cb0  ->  38600000  li r3,0   (RDVR_Accepted)
 #
 # Nebenwirkung: Die herausgekürzte Prüfung enthielt vermutlich auch die Quoten (Team, Trupp, Spieler, War Points).
-# Offen: ob die Warteschlange auf dem Host abgearbeitet wird und das KI-Dropship (DustAIBehaviour_RDV) fliegt.
+#
+# Patch 0.2 (Test 0.1: "queued", aber kein Dropship): Die Abarbeitung FUN_007cbb90 (UDustSvcRDV, vtable 0x1984c18
+# Slot 0x154) entfernt einen fälligen Eintrag nur noch (FUN_01575b78), der Auslieferungs-Aufruf fehlt im Release.
+# Code-Höhle auf 0x7cbcc4 (nur für fällige Einträge, r26 = Eintrag) ruft vorher FUN_007b61a4
+# (ADustSpawner::SpawnAndFitVehicle, vollständiger Code) mit typeID, Fitting, Team und Ort aus dem Eintrag auf, Ort
+# +500 in X und Z. Kein Dropship, das Fahrzeug fällt neben dem Anforderer herunter. Erzeugt mit
+# research/tools_local/rdv_cave.py. Dazu gehört dustdevhook (Python): nach einer angenommenen Anforderung das
+# "pending"-Fitting ohne Rückerstattung löschen, sonst lehnt battleServer jede weitere mit requestNotFinish ab.
 
 Version: 1.2
 
@@ -25,7 +32,32 @@ PPU-ae3f946dfcb103b782f73f1cc5f90587e652f439:
       "DUST 514":
         NPUB30643: [ 03.19 ]
     Author: "Dust 514 RPCS3 research"
-    Patch Version: 0.1
-    Notes: "Host only. The RDV request validation is a release-build stub that always returns RDVR_Denied_InvalidLocation. Treat it as accepted so the request is queued."
+    Patch Version: 0.2
+    Notes: "Host only. The RDV request validation is a release-build stub that always returns RDVR_Denied_InvalidLocation; treat it as accepted. The release queue tick drops due requests without delivering; a cave spawns the vehicle with its fitting next to the requester instead (no dropship)."
     Patch:
       - [ be32, 0x007cc6ec, 0x38600000 ] # li r3,0 (was bl 0x000e4cb0)
+      # RDV delivery cave, 23 slots
+      - [ calloc, 0x007cbcc4, 23 ]
+      - [ be32, 0x00000000, 0xf821ff71 ] # stdu r1, -0x90(r1)
+      - [ be32, 0x00000004, 0x3d2043fa ] # lis r9, 0x43fa
+      - [ be32, 0x00000008, 0x91210080 ] # stw r9, 0x80(r1)
+      - [ be32, 0x0000000c, 0xc0410080 ] # lfs f2, 0x80(r1)
+      - [ be32, 0x00000010, 0xc03a0024 ] # lfs f1, 0x24(r26)
+      - [ be32, 0x00000014, 0xec21102a ] # fadds f1, f1, f2
+      - [ be32, 0x00000018, 0xd0210080 ] # stfs f1, 0x80(r1)
+      - [ be32, 0x0000001c, 0x813a0028 ] # lwz r9, 0x28(r26)
+      - [ be32, 0x00000020, 0x91210084 ] # stw r9, 0x84(r1)
+      - [ be32, 0x00000024, 0xc03a002c ] # lfs f1, 0x2c(r26)
+      - [ be32, 0x00000028, 0xec21102a ] # fadds f1, f1, f2
+      - [ be32, 0x0000002c, 0xd0210088 ] # stfs f1, 0x88(r1)
+      - [ be32, 0x00000030, 0x809a0000 ] # lwz r4, 0(r26)
+      - [ be32, 0x00000034, 0x38ba0008 ] # addi r5, r26, 8
+      - [ be32, 0x00000038, 0xe8c10080 ] # ld r6, 0x80(r1)
+      - [ be32, 0x0000003c, 0xe8e10088 ] # ld r7, 0x88(r1)
+      - [ be32, 0x00000040, 0x39000000 ] # li r8, 0
+      - [ be32, 0x00000044, 0x39200000 ] # li r9, 0
+      - [ be32, 0x00000048, 0x815a0014 ] # lwz r10, 0x14(r26)
+      - [ be32, 0x0000004c, 0x38600000 ] # li r3, 0
+      - [ jumpl, 0x00000050, 0x007b61a4 ] # bl 0x7b61a4
+      - [ be32, 0x00000054, 0x38210090 ] # addi r1, r1, 0x90
+      - [ be32, 0x00000058, 0x63e30000 ] # ori r3, r31, 0

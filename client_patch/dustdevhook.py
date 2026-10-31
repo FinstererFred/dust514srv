@@ -278,6 +278,21 @@ def _PatchBattleServer(module):
     # OnInvokeSvcMethodFromClient checks the attributes the service decorators set (e.g. "access").
     SpawnCharacterWithFitting.__dict__.update(originalSpawn.im_func.__dict__)
     cls.SpawnCharacterWithFitting = SpawnCharacterWithFitting
+
+    # Vehicles: the pending fitting is cleared when the RDV delivers, which the release build never does (the host
+    # patch spawns the vehicle from the queue instead). A rejected request is refunded by UnrealScript, so whatever
+    # is still pending was accepted: drop it without a refund, otherwise every later request is requestNotFinish.
+    originalDeploy = cls.DeployVehicleWithFitting
+
+    def DeployVehicleWithFitting(self, _charid, fittingInfoStr):
+        result = originalDeploy(self, _charid, fittingInfoStr)
+        if self.battle is None and self.fittingBattle2.GetPendingDeployVehicleFitting(_charid) is not None:
+            self.fittingBattle2.ClearPendingVehicleFittingForChar(_charid, False)
+            log.info('vehicle request of %s accepted, pending fitting cleared', _charid)
+        return result
+
+    DeployVehicleWithFitting.__dict__.update(originalDeploy.im_func.__dict__)
+    cls.DeployVehicleWithFitting = DeployVehicleWithFitting
     log.info('dustdevhook: patched dust.battleServer.BattleServer')
 
 

@@ -591,6 +591,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Patch 0.1 `rpcs3_patches/host_rdv_request.yml` (Aufrufstelle → `li r3,0`, Stub selbst nicht anfassen, vermutlich
   zusammengelegt) im Windows-Host eingetragen (Sicherungen `*.before_rdv`), **ungetestet**. Offen: ob die Warteschlange
   abgearbeitet wird und das KI-Dropship fliegt (KI-Teile könnten ebenfalls fehlen); Quoten entfallen mit dem Stub.
+  **Test 0.1 (2026-10-31):** „… has been queued“, aber kein Dropship; zweite Anforderung `requestNotFinish` („pending
+  vehicle“), weil Python das Fitting bis zur Auslieferung als pending hält. Ghidra: Die Abarbeitung `FUN_007cbb90`
+  (UDustSvcRDV-vtable 0x1984c18, Slot 0x154) entfernt fällige Einträge nur noch, der Auslieferungs-Aufruf fehlt;
+  `NceVehicleRDV.DebugDropVehicle` ist ein leerer Stub. Vollständig vorhanden: `ADustSpawner::SpawnAndFitVehicle`
+  (`FUN_007b61a4`, r4 typeID, r5 Fitting, r6/r7 Ort, r8/r9 Rotation, r10 Team) und `SpawnByTypeImpl` (`FUN_0079f21c`).
+  **Patch 0.2:** Code-Höhle auf 0x7cbcc4 spawnt das Fahrzeug aus dem Eintrag (+500 in X und Z, kein Dropship),
+  `dustdevhook` löscht das pending-Fitting nach angenommener Anforderung (Checkout läuft synchron davor). Im Host
+  geladen, Spiel-Test offen. Unklar, ob die Abarbeitung läuft (nur bei RDV-Verzögerung `svc+0x74` > 0).
 - **Fahrzeuge (Panzer, Dropships), zurückgestellt bis nach den Performance-Tests (Entscheidung 2026-10-30):** Technisch
   sollte es gehen. Der Client schickt sein Fitting beim Spawn bzw. Anfordern an den Host (`DeployVehicleWithFitting`), der
   Host hat alle Items 999× und alle Skills auf Stufe 5. CCPs Fitting-Liste im CATMA-Dienst kann neue Fittings anlegen (POST),
