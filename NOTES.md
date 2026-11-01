@@ -551,6 +551,20 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Offene Fragen
 
+- **Neues Loch in der Karte (2026-11-01):** Tester ist auf dem Vulkan-Client (Host Null) durchgefallen, laut Deploy-Karte
+  in der Nähe der Straßenkurve südwestlich eines Versorgungsdepots, bei einem Tor mit Silos. Position beim Sturz nicht gesichert.
+  Offen: Fällt man auf dem Client auch ohne Host-Korrektur durch (Client-Loch), oder fällt nur der Host-Pawn und zieht den Client mit
+  (Host-Kollision, Thema Patch 0.5)? Gleiche Stelle wie (153509, 41800)? Nachstellen, dicht davor stehen bleiben, dann
+  `live_dump.py` beider Instanzen und `pawn_state.py`.
+  Abbild davor (`…_20261101_083609_live` Client, `…_083612_live` Host): beide `PHYS_Walking` bei (19823.5, -13418, 45091.9)
+  auf einer `StaticMeshCollectionActor` (Gebäude) in MN_CRATERS01, Host und Client also einig. Andere Stelle als (153509, 41800).
+  Bild: Die Geländekante ist grob gezackt und hat zwischen den Zacken einen Spalt zur Gebäudewand. Das sieht nach einer
+  Loch-Maske in grober LOD aus. Weil man ganz durchfällt statt zurückgezogen zu werden, fehlt die Kollision im Spalt mindestens
+  auf dem Host. Ob das Original den Spalt auch hatte, ist unklar.
+  **Gezielter Sturz (Abbilder `…_083855` Client, `…_083858` Host, `…_083901` Client, `…_083904` Host):** Beide Seiten sind
+  durchgehend `Falling` auf derselben Bahn: Höhe 23807 → 13505 → 4076 → -6114, Spalt bei etwa (20900, -15340). Die Kollision
+  fehlt also im Client genauso wie im Host. Der Client nutzt für den eigenen Pawn die unveränderte Kollision des Spiels, also
+  liegt das Loch sehr wahrscheinlich in den Kartendaten oder kommt von RPCS3, nicht von Patch 0.5. Der Host richtet es nicht an.
 - Gibt es Grenzen im NetDriver oder in `sys_net`/RPCS3? Bis 5 Spieler keine.
 - Wie skaliert der Game-Thread (~11 ms/Tick bei 5 Spielern) mit aktiven Spielern und mit mehr als 5? Wie hält man den Host
   ohne VSync auf einem festen Takt (z. B. 30 oder 60), damit er nicht unnötig CPU verbrennt?
