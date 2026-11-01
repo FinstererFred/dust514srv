@@ -28,6 +28,17 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Docker-Datenordner aktualisiert, RPCS3-Stand im Image (2026-11-01):** `export_host_data.ps1` neu ausgeführt
+  (Sicherungen `*.before_export1101`, alte `COMMON.SDAT` als `D:\dust514-data\COMMON.SDAT.before_export1101`). Vorher
+  fehlten im Datenordner die COMMON.SDAT vom 31.10. (Matchende-Hook, RDV-pending-Fitting) sowie Patch 0.6/0.7 und
+  RDV 0.3 samt Eintrag in `patch_config.yml`; jetzt bitgleich zu `D:\rpcs3`. Das Export-Skript las die Config als ANSI
+  (Midi-Zeile verstümmelt), jetzt `-Encoding UTF8`. Images neu gebaut, Stack **noch nicht gestartet** (lokaler Stack
+  belegte die Ports). RPCS3 im Image ist fest auf `e53ac18f` (v0.0.43) gepinnt, ein automatisches Update gibt es nicht.
+  Upstream-Master (`fab15ea`, 31.10.) hat das RSX umgebaut (`Core/RSXDisplayEngine.cpp`, `GSRender.cpp` gibt es nicht
+  mehr), `null-renderer-flip.patch` greift nicht mehr. Dafür löscht `display_engine::flip` die Emu-Flip-Anforderung
+  jetzt zentral für alle Renderer, der Patch ist dort also vermutlich überflüssig. Ungetestet: Build ohne Patch,
+  Null-Renderer mit `Frame limit: Auto`, Tick-Messung gegen den gepinnten Stand.
+
 - **`Thread Scheduler Mode: RPCS3 Scheduler` am Host: +25 % Tick bei 32 Spielern (2026-10-30, übernommen):** 32 feuernde
   Fake-Clients, je Lauf Host-Neustart und zwei 30-s-Fenster `host_tick.py`, Varianten abwechselnd. RPCS3-Scheduler
   22,8 / 23,0 / 24,5 / 22,8 / 27,6 / 24,4 (Mittel 24,2 Ticks/s, p95 49–72 ms), Betriebssystem-Scheduler 20,4 / 21,3 / 18,7 /
