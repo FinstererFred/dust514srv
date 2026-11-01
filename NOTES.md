@@ -557,6 +557,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     Render-Terrain denselben Aufbau hat, könnte Kamerawippen im Stand an einer Stufengrenze die Dünenform umschalten.
     Unbestätigt. Nächster Schritt: an der Sprungstelle zwei Live-Abbilder von Client b (`live_dump.py`), je eins pro Zustand,
     und vergleichen, was sich ändert (Terrain-Kacheln, Cluster-Bits `+0x314`, Sichtbarkeit von Komponenten).
+  - **Neu:** Laut Nutzer flackert es im Stand etwa alle 200 ms. Abbilder dauern Sekunden, also ungeeignet (gelöscht).
+    Schnelles Wechseln im Stand und ein Berg, der je nach Blickrichtung nur teilweise erscheint, passen eher zu
+    falschen Occlusion-Query-Ergebnissen (UE3 blendet Objekte nach Queries aus) als zu LOD. Test: Client b
+    `Disable ZCull Occlusion Queries: true` (Sicherung `config_NPUB30643.yml.before_zcull`).
 
 ## Ausprobiert
 
