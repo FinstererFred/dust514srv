@@ -81,20 +81,35 @@ the server runs).
 
 ### 1.3 Repository and Python 2.7
 
+All commands in steps 1.3 and 1.4 are meant for **Windows PowerShell** (Start menu → "Windows PowerShell"), not for
+the old command prompt (`cmd.exe`).
+
 ```powershell
 git clone <this repository> C:\dust514srv
 cd C:\dust514srv
 conda create -p tools\py27 python=2.7
 ```
 
-The game's Python cannot compile source files, so our client patch is compiled to Python 2.7 bytecode with
-`tools\py27\python.exe`.
+**What conda is for:** DUST 514 runs Python 2.7 inside the game, and its Python cannot compile source files. The
+export therefore compiles our client patch (`client_patch\*.py`: dev hook and log forwarding for the host) to Python 2.7
+bytecode before it adds it to the game's `COMMON.SDAT`. Python 2.7 is long out of support and hard to install next to a
+current Python, so conda creates a separate Python 2.7 just for this, in the folder `tools\py27` where the export looks
+for it. It changes nothing else on the PC. The server does not need it: the Docker images bring their own Python.
+
+If `conda` is not found in PowerShell, run the `conda create` line in the "Anaconda Prompt" from the Start menu instead
+(after `cd C:\dust514srv`), or run `conda init powershell` once and open a new PowerShell window.
 
 ### 1.4 Export the data folder
 
+In PowerShell, in the repository folder:
+
 ```powershell
-tools\export_host_data.ps1 -Rpcs3 C:\rpcs3 -Out E:\dust514-data
+cd C:\dust514srv
+powershell -ExecutionPolicy Bypass -File tools\export_host_data.ps1 -Rpcs3 C:\rpcs3 -Out E:\dust514-data
 ```
+
+`-ExecutionPolicy Bypass` allows this one script to run: Windows blocks unsigned PowerShell scripts by default
+("running scripts is disabled on this system"). It does not change the setting for other scripts.
 
 `-Rpcs3` is the RPCS3 folder from 1.1 (default `D:\rpcs3`), `-Out` an empty folder with about 4 GB free space.
 The script copies the game, license, firmware and patches and then prepares the copy for the host:
@@ -304,6 +319,8 @@ rpcs3 --no-gui <path to EBOOT.BIN> -- -autologinserver=<server>:8080 -autologinc
 | Problem | Cause / fix |
 |---|---|
 | Export: `tools\py27 is missing` | Create the Python 2.7 environment (1.3) |
+| Export: "running scripts is disabled on this system" | Start the export with `powershell -ExecutionPolicy Bypass -File …` as shown in 1.4 |
+| Export: `python` is not recognized | Install Python 3 and tick "Add python.exe to PATH" in the installer, then open a new PowerShell window |
 | Export: `DUST 514 (NPUB30643) is not installed` | `-Rpcs3` does not point to the RPCS3 folder with the installed game |
 | Host stays `waiting` in `status.json` | The `rpcn` container is not running; `docker compose logs rpcn` |
 | Host never reaches the battle map | `$DUST_DATA/rpcs3/cache/rpcs3/RPCS3.log`: game version must be 03.19, "Applied patch" lines for the EdgeZlib and host patches |
