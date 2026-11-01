@@ -4,7 +4,7 @@ Standalone-Host für einen Linux-Server ohne GPU. Vier Container, alle im Host-N
 
 | Dienst | Image | Aufgabe |
 |---|---|---|
-| `host` | `dust514-host` (Ubuntu 26.04) | RPCS3, aus dem Quellcode gebaut mit `rpcs3_patches/*.patch`, läuft `--headless` mit Null-Renderer und startet die Karte als UE3-Listen-Server (UDP 7777); ein Watchdog startet RPCS3 bei Absturz, Hänger oder auf Anfrage neu |
+| `host` | `dust514-host` (Ubuntu 26.04) | RPCS3, aus dem Quellcode gebaut (Stand fest im Dockerfile), läuft `--headless` mit Null-Renderer und startet die Karte als UE3-Listen-Server (UDP 7777); ein Watchdog startet RPCS3 bei Absturz, Hänger oder auf Anfrage neu |
 | `crest` | `dust514-crest` (Python 3.13) | `dust_server/` (CREST-API, Gefechtssuche, Dev-Befehle für den Host) |
 | `catma` | `dust514-catma` (Python 2.7) | `catma_service/` (CCPs Offline-Handler mit der CATMA-Datenbank) |
 | `rpcn` | `dust514-rpcn` (Debian 12) | RPCN 1.12.1, aus dem Quellcode gebaut, nur auf `127.0.0.1:31313`: Hier meldet sich der Host an. Spieler bleiben bei ihrem eigenen RPCN (z. B. dem offiziellen), die Spielverbindung läuft nicht über RPCN |
@@ -16,22 +16,24 @@ Warum das ohne GPU geht: `docs/battle_feasibility.md`, Experiment 9, Nachtrag �
 - Linux-Server mit Docker und Compose v2, x86-64 mit AVX2, mindestens 8 Kerne und 16 GB RAM (Richtwert: Beim Test
   liefen sechs SPU-Threads mit je ~80 % plus RSX-, PPU- und Python-Threads)
 - Rund 15 GB Platz: Daten ~3 GB, RPCS3-Build ~5 GB, Caches
-- Der Datenordner (siehe unten), lokal erzeugt mit `tools/export_host_data.ps1`
+- Der Datenordner (siehe unten), lokal erzeugt mit `tools/export_host_data.ps1` (Schritt für Schritt ab den PKG-Dateien:
+  `docs/setup_guide_en.md`)
 
 ## Datenordner (`DUST_DATA`, außerhalb des Repos)
 
 ```
 $DUST_DATA/
-  extracted_0319/                 entpackte PYTHON.SDAT/COMMON.SDAT (für catma)
+  extracted_0319/                 entpackte Original-PYTHON.SDAT/COMMON.SDAT (für catma)
   rpcs3/                          → /data im host-Container
     config/rpcs3/                 = $XDG_CONFIG_HOME/rpcs3
-      custom_configs/config_NPUB30643.yml   Null-Renderer, Frame limit Auto, Thread Scheduler Mode: RPCS3 Scheduler (unter Linux ohne config/-Unterordner)
-      patch_config.yml
+      custom_configs/config_NPUB30643.yml   = docker/host/config_NPUB30643.yml: Null-Renderer, Frame limit Auto, RPCS3 Scheduler (unter Linux ohne config/-Unterordner)
+      patch_config.yml            EdgeZlib und die drei Host-Patches aktiv
       rpcn.yml                    Host-Konto (DustHost, zufälliges Passwort) am Stack-RPCN 127.0.0.1:31313
-      dev_hdd0/game/NPUB30643/    Spiel mit gepatchter COMMON.SDAT (Dev-Hook, Log-Weiterleitung) und SAKE.INI
+      dev_hdd0/game/NPUB30643/    Spiel mit gepatchter COMMON.SDAT (Dev-Hook, Log-Weiterleitung), DUSTGAME.XXX (Data-Log) und SAKE.INI
       dev_hdd0/home/              Benutzerprofil mit Lizenz (.rap)
       dev_flash/                  PS3-Firmware
-      patches/                    EdgeZlib-Patch und LOD-/Kollisions-Patch (rpcs3_patches/host_full_outpost_lod.yml)
+      patches/                    NPUB30643_patch.yml (EdgeZlib, vom PC) und patch.yml (Host-Patches aus rpcs3_patches/: LOD/Kollision,
+                                  Weltrendering aus, RDV)
     cache/rpcs3/                  RPCS3.log, PPU/SPU-Caches (entsteht beim ersten Start)
     control/                      restart, stop, status.json (Watchdog)
   rpcn/                           → /data im rpcn-Container: rpcn.cfg, Zertifikat, Kontendatenbank (entsteht beim ersten Start)

@@ -28,6 +28,31 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **RPCS3-Update im Docker-Image (2026-11-01): aktueller Master taugt nicht, gepinnt auf `b19cedaa` (29.10.):** Master `ad468a13`
+  (1.11.) baut ohne unseren Flip-Patch (RSX-Umbau ab `17ca01610`, `display_engine::flip` löscht die Emu-Flip-Anforderung jetzt
+  zentral). Der Host bootet, wendet alle Patches an, kommt aber nie über `HOSTFS will be used` hinaus: Der Spiel-Thread `FlipPump`
+  wartet auf die Bestätigung des ersten Flips, RPCS3 meldet bei 44 s „RSX queue appears to be stuck“, der Main-Thread hängt nach
+  `cellSaveDataListAutoLoad` (beim alten Stand beendet sich dort `FlipPump`, danach `PS3Progress_FirstFrame`). Kein Kontakt zum
+  CREST-Server (die Heartbeat-Anfragen im Log stammen vom Watchdog). Also eine Null-Renderer-Regression im Umbau, nicht unser Patch.
+  `b19cedaa` ist der letzte Master-Commit vor der Umbau-Serie, 44 Commits nach `e53ac18f`; `GSRender.cpp`, `Null/` und
+  `RSXThread.cpp` sind dazwischen unverändert, der Flip-Patch greift. Altes Image als `dust514-host:e53ac18f` getaggt.
+  **Nachtrag:** Nicht der RSX-Umbau ist schuld. Der Windows-Host `D:\rpcs3` läuft mit 20511 (`9508444d`, 30.10., schon nach
+  dem Umbau), und Client b lief heute bis 13:42 mit 20549 (`d0f66e3f`). Um 13:43 hat sich Client b selbst auf 20551
+  (`ad468a13`) aktualisiert, seitdem dasselbe Bild auch mit Vulkan: TTY `ALREADY PUMPING!!`, „RSX queue appears to be stuck“,
+  0,7 FPS, schwarzer Bildschirm. Zwischen 20549 und 20551 liegen nur `fab15ea` („HLE: Set cpu_flag::wait around
+  vm::alloc/vm::dealloc“) und ein Vulkan-Fix, also ist `fab15ea` der Hauptverdacht (Upstream melden, mit Log). Client b auf 20549
+  zurückgesetzt (aus `rpcs3_old`, 20551 gesichert in `D:\rpcs3_b\rpcs3_20551`). Updates beim Start von RPCS3 ablehnen.
+  Docker bleibt bei `b19cedaa` mit Flip-Patch (getestet: Host nach ~4,5 min im Skirmish-Gefecht, erster Start mit neuen Caches).
+- **Export-Skript macht jetzt alle Host-Anpassungen an der Kopie (2026-11-01):** `tools/export_host_data.ps1` patcht `COMMON.SDAT`
+  (plus TOC-Größe) und `DUSTGAME.XXX` im Datenordner, setzt dort `SAKE.INI` auf 127.0.0.1:8080, schreibt die drei Host-Patches aus
+  `rpcs3_patches/` als `patches/patch.yml` (RPCS3 lädt `patch.yml` und `NPUB30643_patch.yml` zusammen, gleiche Version wird
+  übersprungen), erzeugt `patch_config.yml` neu, nimmt die Host-Config aus `docker/host/config_NPUB30643.yml` und entpackt die
+  CATMA-Module aus den Original-SDATs. Die Quellinstallation bleibt ein normaler Client. `upk.py` liegt jetzt in `tools/`.
+  Lauf gegen `D:\dust514-data` (Sicherungen `*.before_release1101`): `COMMON.SDAT` und `DUSTGAME.XXX` bitgleich zu `D:
+pcs3`,
+  `extracted_0319` gleich `research\extracted_0319`. Die TOC-Größe von `COMMON.SDAT` stimmt in `D:
+pcs3` nicht (4554326 statt
+  4558594) und das Spiel läuft trotzdem, die Größe wird für diese Datei also offenbar nicht geprüft.
 - **Docker-Datenordner aktualisiert, RPCS3-Stand im Image (2026-11-01):** `export_host_data.ps1` neu ausgeführt
   (Sicherungen `*.before_export1101`, alte `COMMON.SDAT` als `D:\dust514-data\COMMON.SDAT.before_export1101`). Vorher
   fehlten im Datenordner die COMMON.SDAT vom 31.10. (Matchende-Hook, RDV-pending-Fitting) sowie Patch 0.6/0.7 und

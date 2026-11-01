@@ -4,8 +4,10 @@
 
 FROM ubuntu:26.04 AS build
 
-# The RPCS3 version our local tests used (v0.0.43-20372); the null-renderer patch is written against it
-ARG RPCS3_COMMIT=e53ac18f8ddd4cfd0e92a57d15740d4170c1e744
+# RPCS3 master of 2026-10-29 (v0.0.43-20416), the last commit before the RSX core rework removed GSRender.cpp, which our
+# null-renderer patch targets. Master since 2026-10-31 (fab15ea, suspected) hangs DUST 514 at its first flip with every
+# renderer ("RSX queue appears to be stuck"), see NOTES.md
+ARG RPCS3_COMMIT=b19cedaaff84abc12afc6a27b58a16d370d55156
 ARG BUILD_JOBS=0
 
 ENV DEBIAN_FRONTEND=noninteractive
