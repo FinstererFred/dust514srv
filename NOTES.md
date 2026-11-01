@@ -461,7 +461,7 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   der Host checkt das Fitting aus (`fittingBattle2 Checking out fitting`), danach keine Fehler, Spawn laut Nutzer ok.
   Leere Slots kommen als `-1` an. Der Host prüft weiter gegen sein 999er-Inventar und bucht nichts ab.
   Noch offen in RPCS3: LP-Kauf, Skillbuch/Respec verbrauchen.
-- **Stufe 5b Matchende und Belohnungen, umgesetzt, in RPCS3 noch ungetestet (2026-10-30):** Funde im Client-Code:
+- **Stufe 5b Matchende und Belohnungen, in RPCS3 abgenommen (2026-10-30/31, Details am Ende dieses Eintrags):** Funde im Client-Code:
   CCPs `_CompleteBattle` würde auf dem Listen-Host scheitern (`self.members` leer, `self.battle` None) und am Ende den
   Prozess beenden (`os.kill`). Der Ergebnisbildschirm (`endOfMatch2`) öffnet erst, wenn `dustClient.OnEndOfMatchResults`
   ankommt; „Merc Quarters“ darin ruft `dustUnreal.QuitToMercQuarters` (Rückkehr geht also clientseitig). Der Host hat die
