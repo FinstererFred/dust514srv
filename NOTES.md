@@ -542,6 +542,9 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Eingerichtet bei Client b: Aniso 16 (Sicherung `config_NPUB30643.yml.before_aniso`); Testpatch „Client test: load all
   outpost LODs“ (`rpcs3_patches/client_all_outpost_lods_test.yml`, nur die LOD-Zeile) eingetragen, aber noch nicht aktiviert
   (Sicherung `NPUB30643_patch.yml.before_clientlod`).
+  **Ergebnis Aniso 16:** rote, gesprenkelte Kanten auf fast allen Oberflächen (Quarters, Karte, Gefecht), also schlechter.
+  Das Spiel nutzt offenbar Texturen als Daten (z. B. gepackte Normal-/Maskentexturen), die die erzwungene Filterung
+  verfälscht. Zurück auf 0, Config wieder gleich der Sicherung. Aniso-Override scheidet aus.
 
 ## Ausprobiert
 
