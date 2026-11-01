@@ -545,6 +545,7 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   **Ergebnis Aniso 16:** rote, gesprenkelte Kanten auf fast allen Oberflächen (Quarters, Karte, Gefecht), also schlechter.
   Das Spiel nutzt offenbar Texturen als Daten (z. B. gepackte Normal-/Maskentexturen), die die erzwungene Filterung
   verfälscht. Zurück auf 0, Config wieder gleich der Sicherung. Aniso-Override scheidet aus.
+  LOD-Testpatch bei Client b aktiviert (`patch_config.yml`, Sicherung `patch_config.yml.before_clientlod`), Ergebnis offen.
 
 ## Ausprobiert
 
