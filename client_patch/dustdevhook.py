@@ -329,6 +329,9 @@ def _PatchBattleServer(module):
 # holding all four objectives destroys it in about BARRAGE_SECONDS * 2 296 000 / (4 * BARRAGE_DAMAGE) = 9.5 minutes.
 BARRAGE_SECONDS = 10
 BARRAGE_DAMAGE = 10000  # per held objective and barrage
+# A hack entry names the hacking character (actorid), not the objective, so objectives are told apart by where they were
+# hacked from. The four Skirmish objectives lie more than 10 000 units apart.
+OBJECTIVE_RADIUS = 3000
 
 
 def _Entries(dataLog, category):
@@ -354,15 +357,19 @@ def _MccBarrage(svc):
     dataLog = sys.modules['dust.svcmgr'].GetUnrealService('DataLog')
     for category in _DATALOG_OTHER:
         getattr(dataLog, 'GetAndClear%sEntries' % category)()
-    owners = _state['objectives']
+    owners = _state['objectives']  # hack position -> team
     for hack in _Entries(dataLog, 'Hack'):
         log.info('hack: %r', hack)
         if hack.get('ismissionobjective'):
-            owners[hack['actorid']] = hack['teamid']
+            p = hack['position']
+            here = (p['x'], p['y'])
+            for spot in owners:
+                if (spot[0] - here[0]) ** 2 + (spot[1] - here[1]) ** 2 < OBJECTIVE_RADIUS ** 2:
+                    here = spot
+                    break
+            owners[here] = hack['teamid']
     for switch in _Entries(dataLog, 'EntityTeamSwitch'):
-        if switch.get('actorid') in owners:
-            log.info('objective team switch: %r', switch)
-            owners[switch['actorid']] = switch['newteam']
+        log.info('team switch: %r', switch)
     held = [0, 0]
     for team in owners.itervalues():
         if team in (0, 1):
