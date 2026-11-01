@@ -577,6 +577,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Raketenweg. Nächste Schritte: (1) `DamageMcc` testen: Sinkt die Leiste, fällt das MCC, endet das Match? (2) Feuern
   unbemannte Geschütze auf Gegner? (3) Abbild: Gibt es Anti-MCC-Installationen in der PawnList bzw. im Level, in welchem
   Zustand? (4) In Ghidra den Spawn der Rakete finden (Aufrufer der Klassenregistrierung bzw. `StaticClass`-Global).
+  **`DamageMcc` wirkt (2026-11-01, Abbild `…_20261101_102034_live`):** Nach `DamageMcc 1 5000` und `DamageMcc 0 5000`
+  (per `dev_once.py`, im Log `RunUE3Command`) haben beide MCCs (`NceVehicleMCC_0` Team 0 @0x47c387c0, `_1` Team 1
+  @0x47c3c880) im VIC (`NceVehicle.m_pVIC` +0xb4c) Schild 1 143 000 (`DustVIC.mShield` +0x1f0) und Panzerung 1 148 000
+  (`mArmor` +0x1ec), also je 5000 vom Schild abgezogen; voll vermutlich je 1 148 000. Pawn.Health ist bei MCCs nur 10.
+  5000 sind 0,2 %, daher im Spiel unsichtbar. Folgerungen: Der Schadensweg bis zum VIC funktioniert. In über 10 Minuten
+  mit allen Zielen kam außer den 5000 kein Schaden an, die Anti-MCC-Raketen feuern also wirklich nicht.
 
 - **Neues Loch in der Karte (2026-11-01):** Tester ist auf dem Vulkan-Client (Host Null) durchgefallen, laut Deploy-Karte
   in der Nähe der Straßenkurve südwestlich eines Versorgungsdepots, bei einem Tor mit Silos. Position beim Sturz nicht gesichert.
