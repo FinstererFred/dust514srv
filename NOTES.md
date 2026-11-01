@@ -28,6 +28,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **Charakter-Server im Docker-Stack eingeschaltet (2026-11-01):** `compose.yaml` reicht `DUST_CHAR_STORE` (Standard 1) und
+  `DUST_HOST_ACCOUNTS` (Standard DustHost) an `crest` durch. Test: FinstererFred2 (offizielles RPCN) legt Charakter „fred“ an
+  (2100100004, Amarr), tritt bei, der Host führt ihn mit eigenen Start-Skills. Offen vor einem öffentlichen Server: Prüft der
+  Server die Signatur des RPCN-Tickets? Sonst kann sich jeder als ein anderer Kontoname ausgeben.
 - **RPCS3-Update im Docker-Image (2026-11-01): aktueller Master taugt nicht, gepinnt auf `b19cedaa` (29.10.):** Master `ad468a13`
   (1.11.) baut ohne unseren Flip-Patch (RSX-Umbau ab `17ca01610`, `display_engine::flip` löscht die Emu-Flip-Anforderung jetzt
   zentral). Der Host bootet, wendet alle Patches an, kommt aber nie über `HOSTFS will be used` hinaus: Der Spiel-Thread `FlipPump`

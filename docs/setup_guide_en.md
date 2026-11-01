@@ -146,6 +146,8 @@ Edit `.env`:
 | `CREST_PORTS` | Backend ports, default `80,443,8080` |
 | `HOST_GAME_ARGS` | Auto-login of the host; keep the default |
 | `BUILD_JOBS` | Parallel compile jobs for RPCS3; 0 = all cores. Lower it if the build runs out of memory |
+| `CHAR_STORE` | `1` (default): every player's RPCN account gets its own characters, saved on the server. `0`: everyone plays CCP's three offline characters, nothing is saved |
+| `HOST_ACCOUNTS` | RPCN name of the host account (`NPID` in the data folder's `rpcn.yml`, default `DustHost`). The host always plays a shared stand-in character |
 
 ### 2.2 Build and start
 
@@ -283,8 +285,9 @@ default `D:\rpcs3\dev_hdd0\game\NPUB30643\USRDIR\DUSTGAME`):
 
 ### 3.5 Play
 
-1. Start DUST 514 in RPCS3. The game logs in through the server, then you choose a character and land in the
-   merc quarters.
+1. Start DUST 514 in RPCS3. The game logs in through the server. On the first login of an RPCN account the character
+   list is empty: create a character (race, bloodline, portrait, name). Then choose it and you land in the merc
+   quarters.
 2. Open the **battle finder**. The server's battle is listed under the name set in the web admin (default
    `LocalTest`). Join it.
 3. The game loads the battle map from the host. Pick a spawn point on the deploy map, or use *Smart Deploy*.
@@ -319,8 +322,9 @@ rpcs3 --no-gui <path to EBOOT.BIN> -- -autologinserver=<server>:8080 -autologinc
   simulated clients that move and fire (about 20 server ticks per second); real matches with more than five players
   are untested.
 - There are no bots: the release build of the game has no AI spawning. Every opponent is a player.
-- All players use CCP's offline characters, and purchases and progress are not saved in the Docker setup yet (a
-  character server is in development).
+- Characters are saved per RPCN account in `dust_server/state/dust.sqlite` (skills, skill points, inventory, fittings,
+  ISK, match rewards). Back up that file. The server knows players only by their RPCN name, so a lost RPCN account
+  means lost characters.
 - Switching the game mode needs a host restart (about 100 seconds), and players have to rejoin.
 - Game modes: Ambush, Skirmish and Domination work. In Acquisition the spawn point is in a red zone, Ambush OMS is
   untested, and Planetary Conquest is not available.

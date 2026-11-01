@@ -117,6 +117,9 @@ Getestet am 2026-11-01 unter Docker Desktop (WSL2) mit `compose.desktop.yaml`, R
 - Host nach etwa 4,5 Minuten im Skirmish-Gefecht (erster Start nach Versionswechsel, Caches neu).
 - Client b (Windows, Vulkan, RPCS3 20549) über das **offizielle RPCN** (`np.rpcs3.net`) angemeldet und über die Gefechtssuche
   beigetreten. Voraussetzung: Bind address `0.0.0.0` (mit `127.0.0.2` erreicht der Client das RPCN nicht).
+- Charakter-Server im Docker an (`CHAR_STORE=1`, Standard; Host-Konto `HOST_ACCOUNTS=DustHost`): Neues RPCN-Konto bekommt eine
+  leere Liste, Charakter angelegt, mit ihm beigetreten. Der Host sieht ihn mit eigener ID und Start-Skills. Gespeichert in
+  `dust_server/state/dust.sqlite`.
 
 Ältere Tests:
 

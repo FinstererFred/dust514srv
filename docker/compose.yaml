@@ -48,6 +48,10 @@ services:
       DUST_ADMIN_TOKEN: ${ADMIN_TOKEN:-}
       # "Restart host" in the admin writes the watchdog's restart request here and reads its status.json
       DUST_HOST_CONTROL_DIR: /data/control
+      # own characters per RPCN account (skills, inventory, fittings, ISK, match rewards) in dust_server/state/dust.sqlite;
+      # 0 = everyone plays CCP's offline characters. HOST_ACCOUNTS = the host's RPCN name(s), NPID in rpcn.yml
+      DUST_CHAR_STORE: ${CHAR_STORE:-1}
+      DUST_HOST_ACCOUNTS: ${HOST_ACCOUNTS:-DustHost}
     volumes:
       # read-write: battle/dev-command JSON files are edited at runtime, logs, certs and admin state are written here
       - ../dust_server:/srv/dust/dust_server
