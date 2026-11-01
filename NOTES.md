@@ -589,6 +589,22 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   **Erste Buchung mit War Points > 0:** 2100001619 (Client b) 574 WP → 1074 SP, 128 700 ISK. Danach bleibt der Host
   in der beendeten Karte stehen, pollt weiter `/dev/commands/` und startet **kein** neues Match. Neustart pro Match
   (CLAUDE.md Schritt 6) fehlt noch: unter Windows `tools/restart_host.ps1`, im Docker `control/restart`.
+  **Raketenstart (Ghidra, 2026-11-01):** Die Klassen-Variable von `ADustAntiMccMissile` liegt bei 0x1cbde7c (gesetzt in
+  0x71cdd4); alle Lesestellen liegen im eigenen Code der Klasse (0x7a9e9c–0x7aa004), kein Spawner nutzt sie. Die Rakete
+  ist also Projektil einer Waffe, abgefeuert von den Anti-MCC-Installationen (Konsole hackt → `mSlaves.OnConsoleHacked`).
+  Unbemannte Geschütze steuert `DustAITurretController` (Objekt 0x378, Verhalten `ShootAtTarget` 0xa0); ob das wie beim
+  RDV im Release leer ist, ist offen. Python kennt die Zielbesitzer nicht direkt, aber `DustDataLog` schreibt
+  `Hack`-Einträge (`actorID`, `teamID`, `isMissionObjective`) und `EntityTeamSwitch`; auf dem Listen-Host liest sie
+  niemand (`dataLogBattle.SetMatchInfo` wird nie gerufen).
+  **Ersatz im Dev-Hook (ungetestet):** `_MccBarrage` liest alle 10 s diese Einträge, führt die Besitzer der Ziele und
+  ruft `DamageMcc <team> <n × 10000>` für jedes Ziel, das das andere Team hält (alle 4 Ziele: MCC nach ~9,5 min weg).
+  Offen: ob `DustDataLog.IsEnabled()` auf dem Host wahr ist (sonst keine Einträge) und ob `teamID` 0/1 wie bei `DamageMcc`.
+- **Fahrzeuge werden nicht abgerechnet (2026-11-01, Nutzer):** Log: `CheckOutFittingForPendingDeployVehicle` kommt,
+  `DestroyFitting` für Fahrzeuge nie. Script: `DustVIC.DestroyFitting`/`CheckinFitting` tun nur etwas, wenn
+  `mFittingOwner` ≠ -1; den setzt die RDV-Auslieferung, die Patch 0.2 ersetzt. Bei Fahrzeugen ruft auch kein Script
+  `OwnerDied` (nur Pawn, Installation, MCC). Fix im Dev-Hook: Fahrzeug-Checkouts merken, bei Matchende bzw. Abgang
+  gelten noch ausgecheckte als verloren (auch überlebende). Sauberer wäre, im RDV-Patch `mFittingOwner` zu setzen.
+  Automatischer Host-Neustart nach Matchende: `DUST_RESTART_AFTER_MATCH` (Standard 60 s) im CREST-Server.
 
 - **Neues Loch in der Karte (2026-11-01):** Tester ist auf dem Vulkan-Client (Host Null) durchgefallen, laut Deploy-Karte
   in der Nähe der Straßenkurve südwestlich eines Versorgungsdepots, bei einem Tor mit Silos. Position beim Sturz nicht gesichert.

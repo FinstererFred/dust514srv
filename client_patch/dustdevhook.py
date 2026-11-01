@@ -10,7 +10,7 @@ log = logging.getLogger('dustdevhook')
 POLL_SECONDS = 3
 _state = {'polling': False, 'revision': None, 'battleServer': False, 'members': set(), 'hostSpawns': 0,
           'offlineSkills': {}, 'byURI': {}, 'joined': {}, 'duration': {}, 'lost': {}, 'vehicles': {},
-          'completed': False}
+          'objectives': {}, 'completed': False}
 
 
 def _InitBattleServices(svc, arg):
@@ -322,8 +322,49 @@ def _PatchBattleServer(module):
     log.info('dustdevhook: patched dust.battleServer.BattleServer')
 
 
+# --- MCC barrage. In Skirmish the objectives control anti-MCC installations whose missiles damage the enemy MCC; the
+# release build never fires them (unmanned turrets need the AI). Instead the host follows who holds the objectives
+# through the data log (hack and team switch entries, which nobody reads on the listen host) and damages each MCC
+# with the dev command DamageMcc for every objective the other team holds. MCC: ~1 148 000 shield + armor each, so
+# holding all four objectives destroys it in about BARRAGE_SECONDS * 2 296 000 / (4 * BARRAGE_DAMAGE) = 9.5 minutes.
+BARRAGE_SECONDS = 10
+BARRAGE_DAMAGE = 10000  # per held objective and barrage
+
+
+def _Entries(dataLog, category):
+    entries = []
+    for entry in getattr(dataLog, 'GetAndClear%sEntries' % category)() or []:
+        # UE3 hands over the struct as a dict with lower-case keys ("_xxx_actorid", see dataLogBattle.FixUnrealData)
+        entries.append(dict((k.lower().replace('_xxx_', ''), v) for k, v in entry.iteritems()))
+    return entries
+
+
+def _MccBarrage(svc):
+    dataLog = sys.modules['dust.svcmgr'].GetUnrealService('DataLog')
+    owners = _state['objectives']
+    for hack in _Entries(dataLog, 'Hack'):
+        log.info('hack: %r', hack)
+        if hack.get('ismissionobjective'):
+            owners[hack['actorid']] = hack['teamid']
+    for switch in _Entries(dataLog, 'EntityTeamSwitch'):
+        if switch.get('actorid') in owners:
+            log.info('objective team switch: %r', switch)
+            owners[switch['actorid']] = switch['newteam']
+    held = [0, 0]
+    for team in owners.itervalues():
+        if team in (0, 1):
+            held[team] += 1
+    for team in (0, 1):
+        if held[1 - team]:
+            svc.RunUE3Command('DamageMcc %d %d' % (team, held[1 - team] * BARRAGE_DAMAGE))
+    if held != _state.get('held'):
+        log.info('objectives held by team 0/1: %d/%d', held[0], held[1])
+        _state['held'] = held
+
+
 def _Poll(svc):
     session = svc.app.GetService('characterConnectionClient').httpSession
+    nextBarrage = time.time() + BARRAGE_SECONDS
     while True:
         try:
             data = session.Resource('/dev/commands/').Get(accept='vnd.ccp.eve.Api-v3')
@@ -335,6 +376,13 @@ def _Poll(svc):
             _RegisterBattleMembers(svc, session)
         except Exception:
             log.exception('dev command poll failed')
+        if time.time() >= nextBarrage:
+            nextBarrage = time.time() + BARRAGE_SECONDS
+            if _state['battleServer'] and _state['byURI'] and not _state['completed']:
+                try:
+                    _MccBarrage(svc)
+                except Exception:
+                    log.exception('MCC barrage failed')
         svc.app.Sleep(POLL_SECONDS)
 
 
