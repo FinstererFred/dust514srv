@@ -259,6 +259,7 @@ Right-click DUST 514 → *Create Custom Configuration* (or *Change Custom Config
 | Network | Network Status | Connected |
 | Network | PSN Status | RPCN |
 | Network | IP/Hosts switches | `crest.eveonline.com=<server>&&dust.dyn.ccpgamescdn.com=<server>` |
+| Network | Bind address | `0.0.0.0` (the default) |
 | GPU | Renderer | Vulkan |
 | Advanced | Write Color Buffers | on (fixes lighting artifacts) |
 | Advanced | Read Depth Buffer, Write Depth Buffer | on (clouds, fog and glow no longer cover the scene) |
