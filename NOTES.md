@@ -618,7 +618,10 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   hing im bekannten Starthänger (RSX queue stuck), der zweite lief. **Fehler:** `actorid` im Hack-Eintrag ist der hackende
   Charakter, nicht das Ziel, alle Hacks zählten als ein Ziel. Jetzt nach Hack-Position (Radius 3000), Test 13:00:
   `objectives held by team 0/1: 4/0`, `DamageMcc 1 40000`. Die Salve kommt real alle ~12,3 s (Poll-Schleife), das MCC
-  fällt also nach ~12 min statt 9,5. Achtung: Ein Client mit `-autologinserver` meldet sich ohne
+  fällt also nach ~12 min statt 9,5. **Ganzer Ablauf bestanden (13:10):** MCC zerstört, Match sauber beendet, 462 WP →
+  +962 SP, +123 100 ISK, Fahrzeugverlust gebucht (`vehicle lost for 2100001617: {353808: 1}`, Server: `lost {353808: 1}`),
+  Host-Neustart 60 s danach automatisch, neuer Host um 13:12 bereit. Kein Treffer-Feedback (`DamageMcc` wirkt direkt auf
+  den VIC); Nutzerwunsch: Geschützschuss (`DustAntiMccMissile`) statt direktem Schaden. Achtung: Ein Client mit `-autologinserver` meldet sich ohne
   PSN-Ticket an und bekommt den gemeinsamen Offline-Benutzer (ohne eigene Fahrzeug-Fittings); eigene Charaktere nur
   mit RPCN-Anmeldung.
 - **Fahrzeuge werden nicht abgerechnet (2026-11-01, Nutzer):** Log: `CheckOutFittingForPendingDeployVehicle` kommt,
