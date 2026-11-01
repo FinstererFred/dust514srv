@@ -339,8 +339,21 @@ def _Entries(dataLog, category):
     return entries
 
 
+# Everything the data log collects (dust.dataLogBattle.entryCategories). The host's data log only runs with the package
+# patch (tools/patch_dustgame_pkg.py); then nothing else empties it, so the barrage clears every category.
+_DATALOG_OTHER = ('Kill', 'WarPoint', 'ObjectDestruction', 'ObjectSpawn', 'MCCSurge', 'MatchWin', 'TeamSelect',
+                  'TeamQuit', 'CharacterPosition', 'WeaponUse', 'VehicleUse', 'AssistKill', 'Spawn', 'DeSpawn',
+                  'MatchDeSpawn', 'VehicleOrder', 'VehicleDeploy', 'VehicleEnter', 'VehicleExit', 'WarRoomEnd',
+                  'Revive', 'BleedoutStart', 'BleedoutEnd', 'SquadOrderIssue', 'SquadOrderEnd', 'ProjectileEvent',
+                  'LockOnEvent', 'WeaponFire', 'WeaponReload', 'WeaponOverheat', 'ModuleActivated',
+                  'DamageReceived', 'HackInitiate', 'RepairStart', 'RepairEnd', 'ActivateOMS',
+                  'FriendlyFirePunished', 'FriendlyFireKicked', 'IdleKicked')
+
+
 def _MccBarrage(svc):
     dataLog = sys.modules['dust.svcmgr'].GetUnrealService('DataLog')
+    for category in _DATALOG_OTHER:
+        getattr(dataLog, 'GetAndClear%sEntries' % category)()
     owners = _state['objectives']
     for hack in _Entries(dataLog, 'Hack'):
         log.info('hack: %r', hack)

@@ -602,6 +602,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Eingespielt 10:41 (Host-SDAT, Sicherung `COMMON.SDAT.before_barrage`; Client b nicht, der Hook betrifft nur den
   Host). Server mit `DUST_CHAR_STORE=1` über `restart_all.ps1 -ServerOnly` neu, Logs in `archive/20261101_104109_barrage`.
   Host meldet `objectives held by team 0/1: 0/0`, die Schleife läuft fehlerfrei.
+  **Erster Hack ohne Eintrag:** `DustDataLog.IsEnabled` ist `NetMode == 1` (Dedicated), der Listen-Host hat 2, das
+  Protokoll war aus. `tools/patch_dustgame_pkg.py` ändert in `DUSTGAME.XXX` den `ByteConst` (Datei-Offset 0x30d4e1)
+  auf 2, Original als `DUSTGAME.XXX.orig`. Der Hook leert jetzt alle Kategorien (sonst wächst z. B. `CharacterPosition`).
+  Host um 10:50 damit neu gestartet, Hack-Test steht aus. Achtung: Ein Client mit `-autologinserver` meldet sich ohne
+  PSN-Ticket an und bekommt den gemeinsamen Offline-Benutzer (ohne eigene Fahrzeug-Fittings); eigene Charaktere nur
+  mit RPCN-Anmeldung.
 - **Fahrzeuge werden nicht abgerechnet (2026-11-01, Nutzer):** Log: `CheckOutFittingForPendingDeployVehicle` kommt,
   `DestroyFitting` für Fahrzeuge nie. Script: `DustVIC.DestroyFitting`/`CheckinFitting` tun nur etwas, wenn
   `mFittingOwner` ≠ -1; den setzt die RDV-Auslieferung, die Patch 0.2 ersetzt. Bei Fahrzeugen ruft auch kein Script
