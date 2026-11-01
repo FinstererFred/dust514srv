@@ -574,8 +574,17 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   5. Stelle. Höhle 3 (`0x7fb7bc`) ruft `FUN_008240e8` für jeden Eintrag auf, und offenbar gewinnt der letzte Aufruf (keine
   Vereinigung). In Test 6 war die Liste kürzer. Der Host fällt also auf grober Kollision mit großem Loch unter dem Gebäude durch
   und zieht den Client mit, das ist kein Kartenfehler. Fahrzeuge betrifft es nicht (eigene Kollision über RigidBody).
-  Fix-Idee: In Höhle 3 nur Pawns mit `PlayerController` aufrufen. Offen: Vereinigt `FUN_008240e8` bei mehreren Spielern
-  überhaupt? Falls nicht, braucht es mehrere Komponenten oder einen eigenen Aufbau der Kacheln.
+  **Patch 0.6 (2026-11-01):** Höhle 3 ruft nur noch Pawns mit `DustPlayerController` (vtable 0x197b698) auf, 40 Plätze.
+  Host-Sicherung `NPUB30643_patch.yml.before_lod06`. Der erste Host-Start danach hing schon beim Booten (RSX queue stuck nach
+  39 s, keine einzige CREST-Anfrage, Patch laut Log angewandt), der zweite lief normal. Das ist also der bekannte Starthänger.
+  Test mit 2 Fake-Clients (`--play`, je ein Team, Abbild `…_093040_live`, `player_tiles.py`): Spieler bei (21630, 2420)
+  bekommt Kacheln bis 2048, Spieler bei (21586, -11856) nur 8192. **Es bekommt also nur ein Spieler feine Kollision.**
+  Grund: `FUN_008240e8` geht über das Wurzelraster (`comp+0x24c` × `+0x250`) und ruft `FUN_00823078` mit einem Parameterblock
+  auf, der Typ steht darin bei +0x3c. `FUN_00823078` setzt bei Typ-Bit 1 Knoten+0x94 zurück, bei Bit 2 Knoten+0xa4. Das
+  sind genau zwei Plätze pro Knoten (im Original Kamera und eigener Pawn, Typ 3 = beide). Mehr als zwei Punkte gehen so nicht.
+  Optionen: (a) zwei Spieler über Typ 1 und Typ 2 (billig, aber nur 2); (b) den Rechteck-Test in `FUN_00823078`
+  (Rechteck um den Punkt in Rasterkoordinaten, `FUN_008240e8` +0xf8..+0x104, Umrechnung `FUN_00823dd8`) durch „nah an
+  irgendeinem Spieler“ ersetzen, analog zu den Höhlen 1 und 2. Das ist die eigentliche Lösung für 32 Spieler.
 - Gibt es Grenzen im NetDriver oder in `sys_net`/RPCS3? Bis 5 Spieler keine.
 - Wie skaliert der Game-Thread (~11 ms/Tick bei 5 Spielern) mit aktiven Spielern und mit mehr als 5? Wie hält man den Host
   ohne VSync auf einem festen Takt (z. B. 30 oder 60), damit er nicht unnötig CPU verbrennt?
