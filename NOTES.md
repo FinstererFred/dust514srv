@@ -562,6 +562,22 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Offene Fragen
 
+- **Skirmish: gegnerisches MCC nimmt keinen Schaden (2026-11-01, Nutzer, alle Ziele > 10 min gehalten):** UnrealScript
+  (`DUSTGAME.XXX`): Der Schadensweg im Script ist vollständig. `NceVehicleMCC.TakeDamage` → `m_pVIC.AbsorbDamage`,
+  Meldungen bei 50/10 % Schild bzw. Panzerung, bei 0 HP Zustand `Dead` und `NotifyMCCDestroy`, sonst
+  `DustSkirmishGame.OnMccDamaged` (Stufenwechsel bei < 50 % Leben). Der Schaden kommt von `DustAntiMccMissile`.
+  Die Rakete sucht sich in `Ignite` das gegnerische MCC aus `svcContextor.mVehicles`, Flug per `ArmMissile`/`Homing`. Wer
+  sie startet, steht nicht im Script: Spawn und Start sind nativ (Namen `InstallationGroup_AntiMCC`,
+  `ConsoleGroup_AntiMccControl`, `antiMccConsoleTypeID`, `Installation_Missile`, `TickMissile`, `mMissileSocketID`), also
+  die von den Zielkonsolen gesteuerten Anti-MCC-Installationen. Klassenname `DustAntiMccMissile` (UTF-16 0x1837ec2) wird
+  nur in der Klassenregistrierung bei 0x7a9d24 referenziert. `DustAIMccTurretController` gehört zu den Geschützen auf
+  dem MCC (`MCCTurretInfo.SocketName`), nicht zu den Zielen. Hypothese: Der Start der Rakete hängt an im Release
+  entfernter KI bzw. an einem Stub (vgl. RDV-Dropship), oder die Installationen fehlen auf dem Host. Dev-Befehl
+  `DamageMcc <team> <schaden>` → `ServerDamageMcc` ruft `TakeDamage` direkt (friendlyFireScale kurz 1.0), umgeht also den
+  Raketenweg. Nächste Schritte: (1) `DamageMcc` testen: Sinkt die Leiste, fällt das MCC, endet das Match? (2) Feuern
+  unbemannte Geschütze auf Gegner? (3) Abbild: Gibt es Anti-MCC-Installationen in der PawnList bzw. im Level, in welchem
+  Zustand? (4) In Ghidra den Spawn der Rakete finden (Aufrufer der Klassenregistrierung bzw. `StaticClass`-Global).
+
 - **Neues Loch in der Karte (2026-11-01):** Tester ist auf dem Vulkan-Client (Host Null) durchgefallen, laut Deploy-Karte
   in der Nähe der Straßenkurve südwestlich eines Versorgungsdepots, bei einem Tor mit Silos. Position beim Sturz nicht gesichert.
   Offen: Fällt man auf dem Client auch ohne Host-Korrektur durch (Client-Loch), oder fällt nur der Host-Pawn und zieht den Client mit
