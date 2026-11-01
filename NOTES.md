@@ -583,6 +583,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   (`mArmor` +0x1ec), also je 5000 vom Schild abgezogen; voll vermutlich je 1 148 000. Pawn.Health ist bei MCCs nur 10.
   5000 sind 0,2 %, daher im Spiel unsichtbar. Folgerungen: Der Schadensweg bis zum VIC funktioniert. In über 10 Minuten
   mit allen Zielen kam außer den 5000 kein Schaden an, die Anti-MCC-Raketen feuern also wirklich nicht.
+  **Matchende über zerstörtes MCC sauber (2026-11-01 10:24):** `DamageMcc 1 1000000` mehrfach → MCC zerstört →
+  `OnBattleServerStoppedFromUnreal (0, 2, 0)` → `matchResult` → `POST /dev/battle/completed/` (9 Mitglieder, darunter
+  alte Fake-Client-Einträge mit Dauer 0, die nichts bekommen) → `OnEndOfMatchResults` → Client b „To Merc Quarters“.
+  **Erste Buchung mit War Points > 0:** 2100001619 (Client b) 574 WP → 1074 SP, 128 700 ISK. Danach bleibt der Host
+  in der beendeten Karte stehen, pollt weiter `/dev/commands/` und startet **kein** neues Match. Neustart pro Match
+  (CLAUDE.md Schritt 6) fehlt noch: unter Windows `tools/restart_host.ps1`, im Docker `control/restart`.
 
 - **Neues Loch in der Karte (2026-11-01):** Tester ist auf dem Vulkan-Client (Host Null) durchgefallen, laut Deploy-Karte
   in der Nähe der Straßenkurve südwestlich eines Versorgungsdepots, bei einem Tor mit Silos. Position beim Sturz nicht gesichert.
