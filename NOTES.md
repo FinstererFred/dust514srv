@@ -561,6 +561,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
     Schnelles Wechseln im Stand und ein Berg, der je nach Blickrichtung nur teilweise erscheint, passen eher zu
     falschen Occlusion-Query-Ergebnissen (UE3 blendet Objekte nach Queries aus) als zu LOD. Test: Client b
     `Disable ZCull Occlusion Queries: true` (Sicherung `config_NPUB30643.yml.before_zcull`).
+  - **Ergebnis ZCull aus:** schlimmer. Deploy-Karte großflächig grau schraffiert, im Gefecht schwebende Bergkulissen,
+    Lücken im Gelände, weiß gestreifter Boden. Spielfigur in den Merc Quarters unsichtbar. Das Spiel braucht die Queries.
+    Das Flackern war schon vorher auch auf der Deploy-Karte zu sehen (keine Bewegung der Kamera), LOD per Abstand ist
+    damit als Hauptursache unwahrscheinlich.
+  - **Abgebrochen (2026-11-01, Wunsch des Nutzers):** Client b komplett auf den Stand vor den Tests zurückgesetzt (Config,
+    `patch_config.yml`, Patch-Datei aus den Sicherungen, per `cmp` geprüft). Ggf. Rat aus der RPCS3-Community holen.
+    Ungetestete Kandidaten: `Relaxed ZCULL Sync`, `Accurate ZCULL stats: false`, `Multithreaded RSX`, `Write Depth/Read
+    Depth Buffer`-Varianten, `Strict Rendering Mode` (gegen andere Fehler schon ohne Wirkung probiert).
 
 ## Ausprobiert
 
