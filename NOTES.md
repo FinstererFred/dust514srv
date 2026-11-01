@@ -587,6 +587,17 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   irgendeinem Spieler“ ersetzen, analog zu den Höhlen 1 und 2. Das ist die eigentliche Lösung für 32 Spieler.
   Gegenprobe 09:32 (Abbild `…_093211_live`): Tester auf dem Vulkan-Client bei (21599, -11866) hatte auf dem Host Kacheln von
   16384, ein Fake-Client bei (30564, 17360) Kacheln von 2048. Kurz danach fiel der Tester an dieser Stelle durch.
+  **Patch 0.7 (2026-11-01), Vereinigung über alle Spieler:** `FUN_00823078` geht für Knoten fern vom Punkt in den
+  Löschpfad ab `0x823164`: Er löscht die Markierung des Platzes und steigt rekursiv in die Kinder ab. Deshalb gewann
+  der letzte Aufruf. Höhle 3 ruft jetzt den ersten Spieler-Pawn mit Typ 3 auf, alle weiteren mit 0x103. Höhle 4 an
+  `0x823164` springt bei Bit 0x100 in den Epilog `0x8236c8` (`jump`-Eintrag im calloc-Block). Der Typ läuft unverändert
+  durch die Rekursion und wird sonst nur auf Bit 1 und 2 geprüft. Host-Sicherung `NPUB30643_patch.yml.before_lod07`.
+  Nach jeder Patch-Änderung übersetzt RPCS3 neue PPU-Objekte, das Fenster kommt dann erst nach über 60 s.
+  `restart_host.ps1` meldet deshalb „No RPCS3 window“, obwohl der Host weiterläuft.
+  Test (Abbilder 09:39–09:42, 2 Spieler: Fake-Client und Tester): Beide haben in allen 7 Abbildern Kacheln von 2048,
+  zuletzt bei (53326, -10471) (in einem LAV, `NceVehicleWheeled_0`) und (27821, -18560), also etwa 27 000 Einheiten
+  auseinander. Kacheln 211 → 316. Host-FPS im Fenstertitel 27–34 während der Abbilder (vorher 46 ohne Spieler),
+  nicht sauber gemessen. Offen: Kosten pro Spieler bei 16/32 Spielern (Tick, Kachelzahl, Speicher).
 - Gibt es Grenzen im NetDriver oder in `sys_net`/RPCS3? Bis 5 Spieler keine.
 - Wie skaliert der Game-Thread (~11 ms/Tick bei 5 Spielern) mit aktiven Spielern und mit mehr als 5? Wie hält man den Host
   ohne VSync auf einem festen Takt (z. B. 30 oder 60), damit er nicht unnötig CPU verbrennt?
