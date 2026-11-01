@@ -1,0 +1,15 @@
+# Test (2026-11-01): Client lädt alle Detailstufen aller Outposts, damit an der Distanzschwelle keine Stufe mehr
+# nach- oder entladen wird. Nur die erste Zeile aus host_full_outpost_lod.yml, ohne die Kollisions-Höhlen.
+# Prüft, ob das Springen von Felsen/Dünen (Proxy <-> Detail) vom Streaming kommt oder von der Überblendung
+# (FUN_0099ac80). Bleibt es, liegt es an der Überblendung. Achtung: Speicher/VRAM im Gast, Absturz möglich.
+# Eintragen in D:\rpcs3_b\patches\NPUB30643_patch.yml (unter dem PPU-ae3f...-Block), im Patch-Manager aktivieren.
+
+  "Client test: load all outpost LODs":
+    Games:
+      "DUST 514":
+        NPUB30643: [ 03.19 ]
+    Author: "Dust 514 RPCS3 research"
+    Patch Version: 0.1
+    Notes: "Client test only. Forces the outpost LOD manager to stream every detail level of every outpost. Watch memory."
+    Patch:
+      - [ be32, 0x0085f12c, 0x3c807fff ] # lis r4,0x7fff (was lwz r4,0x20(r24))

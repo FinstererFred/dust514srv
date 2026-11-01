@@ -539,6 +539,9 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Verstärker: EdgeZlib-Bypass (Entpacken synchron auf der PPU statt SPU) bremst das Streaming. Offen: Wie stark war das schon
   auf der echten PS3 (Dust war für Pop-in bekannt)? Erste Tests am Client, je einzeln: `Anisotropic Filter Override: 16`
   (verwaschener Boden), Host-Patch „load all outpost LODs“ auf dem Client, danach Schwelle/Hysterese in `FUN_0099ac80` suchen.
+  Eingerichtet bei Client b: Aniso 16 (Sicherung `config_NPUB30643.yml.before_aniso`); Testpatch „Client test: load all
+  outpost LODs“ (`rpcs3_patches/client_all_outpost_lods_test.yml`, nur die LOD-Zeile) eingetragen, aber noch nicht aktiviert
+  (Sicherung `NPUB30643_patch.yml.before_clientlod`).
 
 ## Ausprobiert
 
