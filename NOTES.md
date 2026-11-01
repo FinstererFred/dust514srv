@@ -647,7 +647,8 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   `dustdevhook` löscht das pending-Fitting nach angenommener Anforderung (Checkout läuft synchron davor). Im Host
   geladen. **Test 0.2 (2026-10-31, Client b, Skirmish): LAV wird gespawnt und funktioniert.** Die Abarbeitung läuft
   also (Verzögerung > 0). **Panzer und Dropships spawnen auch, aber auf dem Anforderer (Tod).** Patch 0.3: +1024 in
-  X und Y, +768 in Z (ungetestet). Echter Dropship-Anflug: `DustAIBehaviour_RDV` (vtable 0x19b3a40, Konstruktor
+  X und Y, +768 in Z (~14,5 m neben dem Anforderer). **Test 0.3 (Nutzer, bis 2026-11-01): Panzer und Dropships spawnen
+  neben dem Anforderer und funktionieren.** Echter Dropship-Anflug: `DustAIBehaviour_RDV` (vtable 0x19b3a40, Konstruktor
   0x15e7fe8, Objekt 0xe0 Bytes) hat im Release nur die 84 UObject-Slots, die ganze Flug-KI fehlt. `NceVehicleRDV` als
   Fahrzeug ist da (`OnDropVehicle` 0x882a64 spielt nur Effekte ab, `CreateDropOffMarker` 0x882bb4). Ein Anflug ginge
   nur mit eigener Steuerung (RDV spawnen, Fahrzeug anhängen, Position pro Tick setzen, abwerfen, wegfliegen).
