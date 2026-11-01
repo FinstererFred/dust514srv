@@ -531,6 +531,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 - Der Speicher pro Verbindung (Channels, Replikationsstate) könnte im emulierten 256-MB-Hauptspeicher knapp werden, auch wenn ein Client
   32 Pawns problemlos hält. Die 4,6 GB Host-RAM sagen darüber nichts.
 - Untätige Test-Clients unterschätzen die Last am Host deutlich. Für aussagekräftige Messungen braucht es Bewegung und Schüsse.
+- **Pop-in am Vulkan-Client (2026-11-01, Screenshots des Nutzers):** (a) An manchen Stellen springen Felsen/Dünen im Stand
+  zwischen zwei Formen (Proxy `X_LOD0_n` ↔ Detail). Vermutlich die Überblendung im Client (`FUN_0099ac80`) ohne
+  ausreichende Hysterese genau an der Distanzschwelle, also dieselbe Mechanik wie bei der LOD-Kollision, nur beim Rendern.
+  Kein echtes Z-Fighting (dann würde es pro Pixel flimmern, nicht ganze Formen tauschen). (b) Berg nur teilweise scharf und
+  nach Drehen komplett: Terrain-Kacheln (`FUN_007fb450`) bzw. Textur-Streaming lädt nur, was im Sichtkegel liegt. Mögliche
+  Verstärker: EdgeZlib-Bypass (Entpacken synchron auf der PPU statt SPU) bremst das Streaming. Offen: Wie stark war das schon
+  auf der echten PS3 (Dust war für Pop-in bekannt)? Erste Tests am Client, je einzeln: `Anisotropic Filter Override: 16`
+  (verwaschener Boden), Host-Patch „load all outpost LODs“ auf dem Client, danach Schwelle/Hysterese in `FUN_0099ac80` suchen.
 
 ## Ausprobiert
 
