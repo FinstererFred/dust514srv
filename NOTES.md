@@ -605,7 +605,9 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   **Erster Hack ohne Eintrag:** `DustDataLog.IsEnabled` ist `NetMode == 1` (Dedicated), der Listen-Host hat 2, das
   Protokoll war aus. `tools/patch_dustgame_pkg.py` ändert in `DUSTGAME.XXX` den `ByteConst` (Datei-Offset 0x30d4e1)
   auf 2, Original als `DUSTGAME.XXX.orig`. Der Hook leert jetzt alle Kategorien (sonst wächst z. B. `CharacterPosition`).
-  Host um 10:50 damit neu gestartet, Hack-Test steht aus. Achtung: Ein Client mit `-autologinserver` meldet sich ohne
+  Host um 10:50 damit neu gestartet. **Hack-Test 12:35 bestanden:** Eintrag `hack: {'ismissionobjective': 1, 'teamid': 1, …}`,
+  `objectives held by team 0/1: 0/1`, danach alle 10 s `DamageMcc 0 10000` (teamID passt also). Der erste Host-Start davor
+  hing im bekannten Starthänger (RSX queue stuck), der zweite lief. Achtung: Ein Client mit `-autologinserver` meldet sich ohne
   PSN-Ticket an und bekommt den gemeinsamen Offline-Benutzer (ohne eigene Fahrzeug-Fittings); eigene Charaktere nur
   mit RPCN-Anmeldung.
 - **Fahrzeuge werden nicht abgerechnet (2026-11-01, Nutzer):** Log: `CheckOutFittingForPendingDeployVehicle` kommt,
