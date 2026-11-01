@@ -40,6 +40,9 @@ CHAR_STORE = os.environ.get("DUST_CHAR_STORE") == "1"
 HOST_ACCOUNTS = {a.strip() for a in os.environ.get("DUST_HOST_ACCOUNTS", "DustHost").split(",") if a.strip()}
 NEW_CHARACTER_NPE_STATE = 1  # as CCP's offline character 1; 0 would start the new player experience (untested)
 DELETE_WAIT = float(os.environ.get("DUST_DELETE_WAIT", "60"))  # seconds between "terminate" and the actual delete
+# The listen host stays in the finished map after the end of a match; restart it after this many seconds so the next
+# match starts (time for the results screen and the way back to the merc quarters). 0 = never.
+RESTART_AFTER_MATCH = float(os.environ.get("DUST_RESTART_AFTER_MATCH", "60"))
 
 # Document keys from dust/documentsClient.py. CDN documents are plain text files the client
 # downloads through its HTTP cache; the EULA must not be empty or the client disconnects.
@@ -1688,7 +1691,29 @@ def battle_completed(req):
             "ISKSpent": 0, "ISKReward": 0, "DKReward": 0, "skillPoints": 0, "modifierBonus": 0,
             "potentialSkillPoints": 0, "rewardInCurrentCycle": 0, "personalCycleCap": 0, "corporationTax": 0,
             "corporationPercent": 0.0, "standings": None, **(booked or {}), "team": team, "winningTeam": winning}})
+    schedule_host_restart()
     return {"members": results}
+
+
+_restart_timer = None
+
+
+def schedule_host_restart():
+    global _restart_timer
+    if RESTART_AFTER_MATCH <= 0 or (_restart_timer and _restart_timer.is_alive()):
+        return
+
+    def restart():
+        import admin  # admin imports this module
+        try:
+            print(f"battle: restarting the host for the next match ({admin.restart_host()})", flush=True)
+        except Exception as e:
+            print(f"battle: host restart after the match failed: {e}", flush=True)
+
+    print(f"battle: host restart in {RESTART_AFTER_MATCH:g} s", flush=True)
+    _restart_timer = threading.Timer(RESTART_AFTER_MATCH, restart)
+    _restart_timer.daemon = True
+    _restart_timer.start()
 
 
 @route("POST", r"^/dev/battle/members/(\d+)/completed/$")

@@ -9,7 +9,8 @@ import time
 log = logging.getLogger('dustdevhook')
 POLL_SECONDS = 3
 _state = {'polling': False, 'revision': None, 'battleServer': False, 'members': set(), 'hostSpawns': 0,
-          'offlineSkills': {}, 'byURI': {}, 'joined': {}, 'duration': {}, 'lost': {}, 'completed': False}
+          'offlineSkills': {}, 'byURI': {}, 'joined': {}, 'duration': {}, 'lost': {}, 'vehicles': {},
+          'completed': False}
 
 
 def _InitBattleServices(svc, arg):
@@ -164,6 +165,29 @@ def _Duration(uri, stop=False):
     return _state['duration'].get(uri, 0)
 
 
+def _AddLost(charID, required):
+    from catma import catmaDB
+    cdb = catmaDB.GetDB()
+    consumed, nonConsumed = _state['lost'].setdefault(int(charID), ({}, {}))
+    for typeID, quantity in required.iteritems():
+        target = consumed if cdb.GetTypeByID(typeID).GetValue('consumable') else nonConsumed
+        target[typeID] = target.get(typeID, 0) + quantity
+
+
+def _VehicleLosses(fittingBattle, charID):
+    # Vehicles from the host patch have no fitting owner on their VIC (the RDV delivery sets it, which the release
+    # build lacks), so UnrealScript neither destroys nor checks in their fitting. Whatever is still checked out when
+    # the owner leaves or the match ends counts as lost, also a vehicle that survived (the RDV refund cannot happen).
+    charID = int(charID)
+    checkedOut = fittingBattle.checkedOutFittingString[charID]
+    for fs in _state['vehicles'].pop(charID, []):
+        entry = next((e for e in checkedOut if e[0] == fs), None)
+        if entry:
+            checkedOut.remove(entry)
+            _AddLost(charID, entry[1])
+            log.info('vehicle lost for %s: %r', charID, entry[1])
+
+
 def _Lost(charID):
     lost = _state['lost'].pop(int(charID), ({}, {}))
     return [[{'type': {'href': '/types/%s/' % t}, 'quantity': q} for t, q in d.iteritems()] for d in lost]
@@ -182,6 +206,7 @@ def _ListenCompleteBattle(self, winningTeam, attackerClonesLost, defenderClonesL
         log.exception('end of match stats failed')
     members = []
     for uri, arg in _state['byURI'].items():
+        _VehicleLosses(self.fittingBattle2, arg['characterID'])
         consumed, nonConsumed = _Lost(arg['characterID'])
         members.append({'credential': arg['credential'], 'characterID': arg['characterID'], 'characterURI': uri,
                         'team': arg.get('team', 1), 'duration': _Duration(uri, stop=True),
@@ -221,6 +246,7 @@ def _ListenMemberLeft(self, characterURI, reason):
     arg = _state['byURI'].get(characterURI)
     if not arg or arg.get('host'):
         return
+    _VehicleLosses(self.fittingBattle2, arg['characterID'])
     consumed, nonConsumed = _Lost(arg['characterID'])
     body = {'credential': arg['credential'], 'team': arg.get('team', 1), 'duration': _Duration(characterURI, stop=True),
             'consumed': consumed, 'nonConsumed': nonConsumed, 'reason': reason}
@@ -343,19 +369,26 @@ def _PatchFittingBattle(module):
         required = next((items for fs, items in self.checkedOutFittingString[int(charID)] if fs == fittingString), None)
         destroyed = originalDestroy(self, charID, fittingString)
         if destroyed and required:
-            from catma import catmaDB
-            cdb = catmaDB.GetDB()
-            consumed, nonConsumed = _state['lost'].setdefault(int(charID), ({}, {}))
-            for typeID, quantity in required.iteritems():
-                target = consumed if cdb.GetTypeByID(typeID).GetValue('consumable') else nonConsumed
-                target[typeID] = target.get(typeID, 0) + quantity
+            _AddLost(charID, required)
             log.info('fitting destroyed for %s: %r', charID, required)
         return destroyed
 
-    DestroyFitting.__dict__.update(originalDestroy.im_func.__dict__)
-    cls.DestroyFitting = DestroyFitting
-    # UE3 calls through svcmgr's registry, which UnrealCallableClass filled with the original function.
-    module.UnrealCallableClass.func_globals['_methodRegistry'].get(cls, {})['DestroyFitting'] = DestroyFitting
+    originalVehicle = cls.CheckOutFittingForPendingDeployVehicle
+
+    def CheckOutFittingForPendingDeployVehicle(self, charID):
+        fittingString = originalVehicle(self, charID)
+        if isinstance(fittingString, basestring) and fittingString:
+            _state['vehicles'].setdefault(int(charID), []).append(fittingString)
+        return fittingString
+
+    registry = module.UnrealCallableClass.func_globals['_methodRegistry'].get(cls, {})
+    for name, func, original in (('DestroyFitting', DestroyFitting, originalDestroy),
+                                 ('CheckOutFittingForPendingDeployVehicle', CheckOutFittingForPendingDeployVehicle,
+                                  originalVehicle)):
+        func.__dict__.update(original.im_func.__dict__)
+        setattr(cls, name, func)
+        # UE3 calls through svcmgr's registry, which UnrealCallableClass filled with the original function.
+        registry[name] = func
     log.info('dustdevhook: patched dust.fittingBattle2.FittingBattle2')
 
 
