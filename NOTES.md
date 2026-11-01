@@ -655,8 +655,18 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   **Hänger mitten im Betrieb:** Der automatisch neu gestartete Host hing 13:16 nach ~5 min (RSX queue stuck, keine
   Anfrage mehr, Prozess lebt). Normale Anfragepausen des Hosts: max. ~40 s beim Booten, im Match max. 8 s. Daher lokaler
   Watchdog im CREST-Server (`admin.watch_host`, nur Windows mit Neustartbefehl): 90 s ohne Poll oder 240 s nach einem
-  Neustart ohne ersten Poll → Neustart; läuft `D:pcs3pcs3.exe` nicht, gilt der Host als absichtlich gestoppt. Docker
-  hat das schon (`watchdog.py`, Heartbeat), dort greift die Boot-Prüfung erst nach `STARTUP_GRACE` (1200 s). Achtung: Ein Client mit `-autologinserver` meldet sich ohne
+  Neustart ohne ersten Poll → Neustart; läuft `D:
+pcs3
+pcs3.exe` nicht, gilt der Host als absichtlich gestoppt. Docker
+  hat das schon (`watchdog.py`, Heartbeat), dort greift die Boot-Prüfung erst nach `STARTUP_GRACE` (1200 s).
+  **Dedicated-Weichen (Scan 2026-11-01):** In `DUSTGAME.XXX` vergleichen 97 Funktionen `NetMode` mit einer Konstante, 80
+  davon mit 1 (Dedicated; Muster `01 ffffff41` = NetMode, dann `24 01`). Die meisten überspringen nur Effekte auf dem
+  Dedicated Server (für den Listen-Host harmlos). Richtung noch nicht dekompiliert, spielrelevante Kandidaten:
+  `DustTeamGame.PreBeginPlay/PostBeginPlay/Login/MatchInProgress.BeginState`, `DustServerConfig.*`,
+  `DustTeamInfo.OnOrbitalSupportCountUpdated` (Orbitalschläge), `DustPlayerController.OnSquadWarPointChanged`,
+  `DustGRI.SetWinningTeamNum`, `NceVehicleMCC.Dead.*`, `DustInstallationComponentBase.Dying.BeginState`,
+  `DustTurretWeapon.FireAmmunition`, `DustAntiMccMissile.PlayIgnitionTrail`. CREST-Seite: in den Logs von heute nur
+  404 auf Bilder und einmal `/battlecharacters/<id>/`. Achtung: Ein Client mit `-autologinserver` meldet sich ohne
   PSN-Ticket an und bekommt den gemeinsamen Offline-Benutzer (ohne eigene Fahrzeug-Fittings); eigene Charaktere nur
   mit RPCN-Anmeldung.
 - **Fahrzeuge werden nicht abgerechnet (2026-11-01, Nutzer):** Log: `CheckOutFittingForPendingDeployVehicle` kommt,
