@@ -565,6 +565,17 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   durchgehend `Falling` auf derselben Bahn: Höhe 23807 → 13505 → 4076 → -6114, Spalt bei etwa (20900, -15340). Die Kollision
   fehlt also im Client genauso wie im Host. Der Client nutzt für den eigenen Pawn die unveränderte Kollision des Spiels, also
   liegt das Loch sehr wahrscheinlich in den Kartendaten oder kommt von RPCS3, nicht von Patch 0.5. Der Host richtet es nicht an.
+  **Korrektur, Ursache gefunden (Abbilder `…_090329`–`…_090338`):** Tester stand bei (22158, -12585) still und hüpfte auf und ab,
+  der Client wechselte zwischen `Falling` und `Walking` auf `MegaTerrain_0`. Gelände-Kollisionskacheln
+  (`scratchpad`-Skripte `tiles_at.py`/`fine_tiles.py`/`pawn_list.py`): Unter dem Spieler hat der Client Kacheln bis 2048,
+  der Host nur ab 16384. Die feinen Kacheln des Hosts (2048/4096) liegen seit über 30 Minuten unverändert bei
+  x 23040..39424, y 6144..26624. Dort steht `DustConsole_0` (32367, 16829), der **letzte** Eintrag der PawnList. Die PawnList
+  des Hosts hat in Skirmish 54 Einträge (Geschütze, Fahrzeuge, Versorgungsdepots, CRUs, Konsolen, MCCs), der Spieler steht an
+  5. Stelle. Höhle 3 (`0x7fb7bc`) ruft `FUN_008240e8` für jeden Eintrag auf, und offenbar gewinnt der letzte Aufruf (keine
+  Vereinigung). In Test 6 war die Liste kürzer. Der Host fällt also auf grober Kollision mit großem Loch unter dem Gebäude durch
+  und zieht den Client mit, das ist kein Kartenfehler. Fahrzeuge betrifft es nicht (eigene Kollision über RigidBody).
+  Fix-Idee: In Höhle 3 nur Pawns mit `PlayerController` aufrufen. Offen: Vereinigt `FUN_008240e8` bei mehreren Spielern
+  überhaupt? Falls nicht, braucht es mehrere Komponenten oder einen eigenen Aufbau der Kacheln.
 - Gibt es Grenzen im NetDriver oder in `sys_net`/RPCS3? Bis 5 Spieler keine.
 - Wie skaliert der Game-Thread (~11 ms/Tick bei 5 Spielern) mit aktiven Spielern und mit mehr als 5? Wie hält man den Host
   ohne VSync auf einem festen Takt (z. B. 30 oder 60), damit er nicht unnötig CPU verbrennt?
