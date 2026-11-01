@@ -42,7 +42,8 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   0,7 FPS, schwarzer Bildschirm. Zwischen 20549 und 20551 liegen nur `fab15ea` („HLE: Set cpu_flag::wait around
   vm::alloc/vm::dealloc“) und ein Vulkan-Fix, also ist `fab15ea` der Hauptverdacht (Upstream melden, mit Log). Client b auf 20549
   zurückgesetzt (aus `rpcs3_old`, 20551 gesichert in `D:\rpcs3_b\rpcs3_20551`). Updates beim Start von RPCS3 ablehnen.
-  Docker bleibt bei `b19cedaa` mit Flip-Patch (getestet: Host nach ~4,5 min im Skirmish-Gefecht, erster Start mit neuen Caches).
+  Client b mit offiziellem RPCN braucht Bind address `0.0.0.0` (mit `127.0.0.2` schlägt die RPCN-Verbindung des Spiels fehl),
+  danach Beitritt zum Docker-Host bestätigt. Docker bleibt bei `b19cedaa` mit Flip-Patch (getestet: Host nach ~4,5 min im Skirmish-Gefecht, erster Start mit neuen Caches).
 - **Export-Skript macht jetzt alle Host-Anpassungen an der Kopie (2026-11-01):** `tools/export_host_data.ps1` patcht `COMMON.SDAT`
   (plus TOC-Größe) und `DUSTGAME.XXX` im Datenordner, setzt dort `SAKE.INI` auf 127.0.0.1:8080, schreibt die drei Host-Patches aus
   `rpcs3_patches/` als `patches/patch.yml` (RPCS3 lädt `patch.yml` und `NPUB30643_patch.yml` zusammen, gleiche Version wird

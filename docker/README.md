@@ -109,6 +109,17 @@ Für Spieler außerhalb des Servers:
 
 ## Stand
 
+Getestet am 2026-11-01 unter Docker Desktop (WSL2) mit `compose.desktop.yaml`, Release-Weg nach `docs/setup_guide_en.md`:
+- Image mit RPCS3 `0.0.43-1-b19cedaa` (letzter Master vor dem RSX-Umbau, mit Flip-Patch). Neuere Master ab 20550 hängen beim
+  ersten Flip, siehe NOTES.md.
+- Datenordner neu mit dem überarbeiteten `export_host_data.ps1`; Host-Patches kommen als `patches/patch.yml`, alle vier
+  Patches im Log „Applied patch“.
+- Host nach etwa 4,5 Minuten im Skirmish-Gefecht (erster Start nach Versionswechsel, Caches neu).
+- Client b (Windows, Vulkan, RPCS3 20549) über das **offizielle RPCN** (`np.rpcs3.net`) angemeldet und über die Gefechtssuche
+  beigetreten. Voraussetzung: Bind address `0.0.0.0` (mit `127.0.0.2` erreicht der Client das RPCN nicht).
+
+Ältere Tests:
+
 Getestet am 2026-10-25 unter Docker Desktop (WSL2, Ryzen 9 5900X) mit `compose.desktop.yaml`:
 - Das Image baut (RPCS3 `0.0.43-1-e53ac18f` mit Patch, ~10 Minuten mit 12 Jobs, 978 MB ohne Spieldaten).
 - Der Host meldet sich per RPCN (lokaler Server) an, ist nach etwa 4 Minuten (erster Start) bzw. 100 Sekunden in

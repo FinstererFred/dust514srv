@@ -303,7 +303,7 @@ rpcs3 --no-gui <path to EBOOT.BIN> -- -autologinserver=<server>:8080 -autologinc
 | Export: `DUST 514 (NPUB30643) is not installed` | `-Rpcs3` does not point to the RPCS3 folder with the installed game |
 | Host stays `waiting` in `status.json` | The `rpcn` container is not running; `docker compose logs rpcn` |
 | Host never reaches the battle map | `$DUST_DATA/rpcs3/cache/rpcs3/RPCS3.log`: game version must be 03.19, "Applied patch" lines for the EdgeZlib and host patches |
-| "Connection to PlayStation Network was lost" right at start | RPCN not logged in, or the account is in use elsewhere (one login per account) |
+| "Connection to PlayStation Network was lost" right at start | RPCN not logged in, or the account is in use elsewhere (one login per account). Also check *Network → Bind address*: it must be `0.0.0.0` (or a real address of the PC); a loopback address like `127.0.0.2` cannot reach the RPCN server |
 | Black screen after the intro | EdgeZlib patch missing or not enabled |
 | Black screen, the window title shows less than 1 FPS | RPCS3 0.0.43-20550 or newer: go back to 0.0.43-20549 (3.1) |
 | Login fails / server not available | `SAKE.INI` url or the IP/Hosts switches don't point to the server, or TCP 8080/80/443 are blocked |
