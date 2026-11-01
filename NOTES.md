@@ -599,6 +599,9 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   **Ersatz im Dev-Hook (ungetestet):** `_MccBarrage` liest alle 10 s diese Einträge, führt die Besitzer der Ziele und
   ruft `DamageMcc <team> <n × 10000>` für jedes Ziel, das das andere Team hält (alle 4 Ziele: MCC nach ~9,5 min weg).
   Offen: ob `DustDataLog.IsEnabled()` auf dem Host wahr ist (sonst keine Einträge) und ob `teamID` 0/1 wie bei `DamageMcc`.
+  Eingespielt 10:41 (Host-SDAT, Sicherung `COMMON.SDAT.before_barrage`; Client b nicht, der Hook betrifft nur den
+  Host). Server mit `DUST_CHAR_STORE=1` über `restart_all.ps1 -ServerOnly` neu, Logs in `archive/20261101_104109_barrage`.
+  Host meldet `objectives held by team 0/1: 0/0`, die Schleife läuft fehlerfrei.
 - **Fahrzeuge werden nicht abgerechnet (2026-11-01, Nutzer):** Log: `CheckOutFittingForPendingDeployVehicle` kommt,
   `DestroyFitting` für Fahrzeuge nie. Script: `DustVIC.DestroyFitting`/`CheckinFitting` tun nur etwas, wenn
   `mFittingOwner` ≠ -1; den setzt die RDV-Auslieferung, die Patch 0.2 ersetzt. Bei Fahrzeugen ruft auch kein Script
