@@ -11,6 +11,13 @@ Host restart (a game mode change needs one, the running host crashes switching i
   DUST_HOST_CONTROL_DIR  folder of the Docker watchdog (docker/host/watchdog.py): creates <dir>/restart and
                          reads <dir>/status.json
   DUST_HOST_RESTART_CMD  otherwise a shell command (on Windows default: tools/restart_host.ps1)
+
+Without the Docker watchdog this process watches the host itself (RPCS3 sometimes hangs with "RSX queue appears to be
+stuck", at boot or minutes later, and the game stops polling; normal gaps are at most ~40 s while booting):
+  DUST_HOST_WATCHDOG     "0" = off                                                   [on with the restart command]
+  DUST_HOST_HANG         seconds without a host poll, after it polled, before a restart       [90]
+  DUST_HOST_BOOT         seconds after a restart without any host poll before another one     [240]
+  DUST_HOST_EXE          RPCS3 of the host; when it is not running the host was stopped on purpose  [D:\\rpcs3\\rpcs3.exe]
 """
 
 import gzip
@@ -234,7 +241,46 @@ def restart_host():
         subprocess.Popen(target, shell=True, cwd=BASE_DIR.parent, stdin=subprocess.DEVNULL,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     clear_members()
+    _watch["restarted"] = time.time()
     return method
+
+
+_watch = {"restarted": None}  # time of the last restart through restart_host()
+
+
+def host_running():
+    exe = os.environ.get("DUST_HOST_EXE", r"D:\rpcs3\rpcs3.exe")
+    script = f"if (Get-Process rpcs3 -ErrorAction SilentlyContinue | Where-Object {{ $_.Path -eq '{exe}' }}) {{ 'yes' }}"
+    out = subprocess.run(["powershell", "-NoProfile", "-Command", script], capture_output=True, text=True, timeout=30)
+    return "yes" in out.stdout
+
+
+def watch_host():
+    hang = float(os.environ.get("DUST_HOST_HANG", "90"))
+    boot = float(os.environ.get("DUST_HOST_BOOT", "240"))
+    while True:
+        time.sleep(10)
+        now, restarted = time.time(), _watch["restarted"]
+        polls = [t for t in (server_status.HOST["last_poll"], server_status.HOST["last_members_poll"]) if t]
+        last = max(polls) if polls else None
+        if last and (restarted is None or last > restarted):
+            if now - last <= hang:
+                continue
+            reason = f"no host poll for {now - last:.0f} s"
+        elif restarted and now - restarted > boot:
+            reason = f"no host poll within {now - restarted:.0f} s of the restart"
+        else:
+            continue
+        try:
+            if not host_running():
+                print(f"watchdog: {reason}, but the host is not running (stopped on purpose?)", flush=True)
+                _watch["restarted"] = None
+                server_status.HOST["last_poll"] = server_status.HOST["last_members_poll"] = None
+                continue
+            print(f"watchdog: {reason}, restarting the host ({restart_host()})", flush=True)
+        except Exception as e:
+            print(f"watchdog: host restart failed: {e}", flush=True)
+            _watch["restarted"] = now
 
 
 def clear_members():
@@ -643,4 +689,7 @@ def start(host, port):
     server = Server((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print(f"web admin on http://{host}:{port}/", flush=True)
+    if restart_method()[0] == "command" and os.name == "nt" and os.environ.get("DUST_HOST_WATCHDOG") != "0":
+        threading.Thread(target=watch_host, daemon=True).start()
+        print("watchdog: watching the host's polls", flush=True)
     return server

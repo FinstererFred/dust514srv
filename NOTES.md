@@ -624,7 +624,12 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   fällt also nach ~12 min statt 9,5. **Ganzer Ablauf bestanden (13:10):** MCC zerstört, Match sauber beendet, 462 WP →
   +962 SP, +123 100 ISK, Fahrzeugverlust gebucht (`vehicle lost for 2100001617: {353808: 1}`, Server: `lost {353808: 1}`),
   Host-Neustart 60 s danach automatisch, neuer Host um 13:12 bereit. Kein Treffer-Feedback (`DamageMcc` wirkt direkt auf
-  den VIC); Nutzerwunsch: Geschützschuss (`DustAntiMccMissile`) statt direktem Schaden. Achtung: Ein Client mit `-autologinserver` meldet sich ohne
+  den VIC); Nutzerwunsch: Geschützschuss (`DustAntiMccMissile`) statt direktem Schaden.
+  **Hänger mitten im Betrieb:** Der automatisch neu gestartete Host hing 13:16 nach ~5 min (RSX queue stuck, keine
+  Anfrage mehr, Prozess lebt). Normale Anfragepausen des Hosts: max. ~40 s beim Booten, im Match max. 8 s. Daher lokaler
+  Watchdog im CREST-Server (`admin.watch_host`, nur Windows mit Neustartbefehl): 90 s ohne Poll oder 240 s nach einem
+  Neustart ohne ersten Poll → Neustart; läuft `D:pcs3pcs3.exe` nicht, gilt der Host als absichtlich gestoppt. Docker
+  hat das schon (`watchdog.py`, Heartbeat), dort greift die Boot-Prüfung erst nach `STARTUP_GRACE` (1200 s). Achtung: Ein Client mit `-autologinserver` meldet sich ohne
   PSN-Ticket an und bekommt den gemeinsamen Offline-Benutzer (ohne eigene Fahrzeug-Fittings); eigene Charaktere nur
   mit RPCN-Anmeldung.
 - **Fahrzeuge werden nicht abgerechnet (2026-11-01, Nutzer):** Log: `CheckOutFittingForPendingDeployVehicle` kommt,
