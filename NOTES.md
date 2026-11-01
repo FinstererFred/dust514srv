@@ -545,7 +545,18 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   **Ergebnis Aniso 16:** rote, gesprenkelte Kanten auf fast allen Oberflächen (Quarters, Karte, Gefecht), also schlechter.
   Das Spiel nutzt offenbar Texturen als Daten (z. B. gepackte Normal-/Maskentexturen), die die erzwungene Filterung
   verfälscht. Zurück auf 0, Config wieder gleich der Sicherung. Aniso-Override scheidet aus.
-  LOD-Testpatch bei Client b aktiviert (`patch_config.yml`, Sicherung `patch_config.yml.before_clientlod`), Ergebnis offen.
+  LOD-Testpatch bei Client b aktiviert (`patch_config.yml`, Sicherung `patch_config.yml.before_clientlod`).
+  **Ergebnis:** Springen und Berg unverändert, Streaming der Outpost-Stufen ist es also nicht. Patch wieder aus
+  (`patch_config.yml` = Sicherung). Statische Durchsicht:
+  - Überblendung `FUN_0099ac80` hat Hysterese: Ist ein Cluster schon „nah“ (Zähler `+0x318` > 19), gilt die quadrierte
+    Schwelle ×1,2 (`0x99ac74` = 1.2f). Dazu blendet `FUN_0099aa18` über 31 Schritte und hält 3 Frames. Flattern dort unwahrscheinlich.
+  - Terrain-Streaming `FUN_00815548`: Stufe = (2D-Abstand + 10000) × 2,5e-5, also eine Stufe pro 40000 uu. Zu grob für
+    Sprünge an einer Stelle.
+  - Terrain-Quadtree `FUN_008240e8` (bisher nur als Kollision untersucht) verfeinert nach Position und zusätzlich nach
+    Höhe der Kamera über dem Boden (Zeile mit `LZCOUNT`, Zweierpotenz-Stufen), ohne erkennbare Hysterese. Wenn das
+    Render-Terrain denselben Aufbau hat, könnte Kamerawippen im Stand an einer Stufengrenze die Dünenform umschalten.
+    Unbestätigt. Nächster Schritt: an der Sprungstelle zwei Live-Abbilder von Client b (`live_dump.py`), je eins pro Zustand,
+    und vergleichen, was sich ändert (Terrain-Kacheln, Cluster-Bits `+0x314`, Sichtbarkeit von Komponenten).
 
 ## Ausprobiert
 
