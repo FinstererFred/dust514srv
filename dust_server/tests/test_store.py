@@ -3,6 +3,7 @@
 import base64
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -17,18 +18,48 @@ DAY = 86400
 
 
 class TicketTest(unittest.TestCase):
+    SECRET = 0x1234567890ABCDEF1234567890ABCDEF1234567890ABCDEF12345678
+
+    def key(self, secret=SECRET):
+        return np_ticket._mul(secret, np_ticket.G)
+
     def test_round_trip(self):
         ticket = base64.b64encode(np_ticket.build("DustTester2", 42)).decode()
         self.assertEqual(np_ticket.parse(ticket),
                          {"online_id": "DustTester2", "user_id": 42, "service_id": "UP5018-NPUB30643_00"})
 
     def test_same_size_as_rpcn(self):
-        self.assertEqual(len(np_ticket.build("FinstererFred")), 254)
+        self.assertEqual(len(np_ticket.build("FinstererFred")), 248)  # RPCN with SignTickets=false
 
     def test_garbage(self):
-        for data in (b"", b"\x00" * 16, np_ticket.build("x")[:40]):
+        for data in (b"", bytes(16), np_ticket.build("x")[:40]):
             with self.assertRaises(np_ticket.TicketError):
                 np_ticket.parse(data)
+
+    def test_signed(self):
+        ticket = np_ticket.build("DustTester2", 42, secret=self.SECRET)
+        self.assertEqual(np_ticket.verify(ticket, [self.key()])["online_id"], "DustTester2")
+        self.assertEqual(np_ticket.verify(base64.b64encode(ticket).decode(), [self.key(5), self.key()])["user_id"], 42)
+
+    def test_rejected(self):
+        signed = np_ticket.build("DustTester2", secret=self.SECRET)
+        forged = bytearray(signed)
+        forged[forged.index(b"DustTester2")] = ord("E")  # another online ID, old signature
+        cases = {
+            "unsigned": np_ticket.build("DustTester2"),
+            "other key": signed,
+            "forged": bytes(forged),
+            "expired": np_ticket.build("DustTester2", secret=self.SECRET, issued=time.time() - 3 * 3600),
+            "other game": np_ticket.build("DustTester2", service_id="UP0001-BLUS00000_00", secret=self.SECRET),
+        }
+        for name, ticket in cases.items():
+            with self.subTest(name), self.assertRaises(np_ticket.TicketError):
+                np_ticket.verify(ticket, [self.key(7)] if name == "other key" else [self.key()])
+
+    def test_official_key(self):
+        x, y = np_ticket.public_key(np_ticket.OFFICIAL_RPCN_KEY)
+        self.assertEqual((y * y - x ** 3 - 5) % np_ticket.P, 0)
+        self.assertIsNone(np_ticket._mul(np_ticket.N, np_ticket.G))  # curve constants: N * G = infinity
 
 
 class StoreTest(unittest.TestCase):

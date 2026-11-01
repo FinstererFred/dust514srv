@@ -38,6 +38,9 @@ REFRESH_TOKEN = "dust-local-refresh-token"
 # that token (or none) is answered the old way.
 CHAR_STORE = os.environ.get("DUST_CHAR_STORE") == "1"
 HOST_ACCOUNTS = {a.strip() for a in os.environ.get("DUST_HOST_ACCOUNTS", "DustHost").split(",") if a.strip()}
+# With the store on, a login needs an RPCN ticket signed by the official RPCN or a key in DUST_TICKET_KEYS
+# (np_ticket.verify). 0 accepts any readable ticket, for a local test RPCN that does not sign (SignTickets=false).
+TICKET_CHECK = os.environ.get("DUST_TICKET_CHECK", "1") != "0"
 NEW_CHARACTER_NPE_STATE = 1  # as CCP's offline character 1; 0 would start the new player experience (untested)
 DELETE_WAIT = float(os.environ.get("DUST_DELETE_WAIT", "60"))  # seconds between "terminate" and the actual delete
 # The listen host stays in the finished map after the end of a match; restart it after this many seconds so the next
@@ -172,9 +175,17 @@ def oauth_token(req):
             return token_answer()
         user = store.get().user_for_refresh_token(body.get("refresh_token", ""))
         return token_answer(*store.get().issue_token(user["id"])) if user else UNAUTHORIZED
+    if TICKET_CHECK and not body.get("psn_ticket"):
+        # the host's auto login (-autologinserver) sends username/password instead of a ticket
+        return token_answer()
     try:
-        online_id = np_ticket.parse(body.get("psn_ticket", ""))["online_id"]
+        check = np_ticket.verify if TICKET_CHECK else np_ticket.parse
+        online_id = check(body.get("psn_ticket", ""))["online_id"]
     except (np_ticket.TicketError, ValueError) as e:
+        if TICKET_CHECK:
+            # without the check anyone could log in as any RPCN name and take over its characters
+            print(f"oauth: ticket rejected ({e})", flush=True)
+            return UNAUTHORIZED
         print(f"oauth: unreadable ticket ({e}), shared offline user", flush=True)
         return token_answer()
     if online_id in HOST_ACCOUNTS:

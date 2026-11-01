@@ -28,6 +28,14 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
 
 ## Funde
 
+- **RPCN-Tickets werden geprüft (2026-11-01):** RPCN signiert den Body-Abschnitt (mit 4-Byte-Kopf) per ECDSA secp224k1/SHA-224,
+  DER (`ticket.rs`). Der öffentliche Schlüssel von np.rpcs3.net (`ticket_public.pem` im RPCN-Repo) prüft ein echtes Ticket von
+  FinstererFred2 („Verified OK“). `np_ticket.verify` in reinem Python (~35 ms), plus Ablauf (+1 h Toleranz) und Dienst-ID.
+  Mit `DUST_CHAR_STORE=1` gilt: Ticket muss gültig sein, sonst 401; `DUST_TICKET_CHECK=0` für das lokale Test-RPCN
+  (`research/rpcn`, unsigniert). Fund: Der Host schickt beim Auto-Login **kein** Ticket (`username=dust&password=…`), er bleibt
+  beim gemeinsamen Offline-Benutzer. Signieren im Stack-RPCN war deshalb unnötig und ist zurückgenommen (Schlüssel im Datenordner
+  unter `rpcn/unused_ticket_keys/`). Im Docker getestet: Host ohne Ticket 200, Client b (offizielles RPCN) mit geprüftem
+  Ticket 200, Charakter „fred“ da. Lokal mit Charakter-Server: `DUST_TICKET_CHECK=0` setzen, sonst kommen DustTester2–5 nicht rein.
 - **Charakter-Server im Docker-Stack eingeschaltet (2026-11-01):** `compose.yaml` reicht `DUST_CHAR_STORE` (Standard 1) und
   `DUST_HOST_ACCOUNTS` (Standard DustHost) an `crest` durch. Test: FinstererFred2 (offizielles RPCN) legt Charakter „fred“ an
   (2100100004, Amarr), tritt bei, der Host führt ihn mit eigenen Start-Skills. Offen vor einem öffentlichen Server: Prüft der

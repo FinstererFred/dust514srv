@@ -88,6 +88,11 @@ Netz-Namespace), also immer `up -d --force-recreate` für den ganzen Stack, nie 
 - Dev-Befehle (`/dev/commands/`, `/dev/battle/members/`) bekommt nur der Host, also Anfragen von `127.0.0.1`
   (einstellbar mit `DUST_HOST_PEERS` im `crest`-Container). Andere Clients mit unserem `COMMON.SDAT`-Patch
   bekommen eine leere Liste. Sonst würden sie das Host-Rezept ausführen und ein eigenes Listen-Match starten.
+- Login mit Charakter-Server (`CHAR_STORE=1`): Ein RPCN-Ticket muss vom offiziellen RPCN signiert sein (Schlüssel fest in
+  `dust_server/np_ticket.py`), nicht abgelaufen und für DUST ausgestellt, sonst 401. Weitere signierende RPCN-Server: PEM-Dateien
+  ihrer öffentlichen Schlüssel in `DUST_TICKET_KEYS` (Komma-Liste) am `crest`-Container. `DUST_TICKET_CHECK=0` schaltet die Prüfung
+  ab (nur für ein lokales Test-RPCN ohne `SignTickets`). Logins ohne Ticket (Auto-Login des Hosts) bekommen wie bisher den
+  gemeinsamen Offline-Benutzer.
 - Modus und Karte: `dust_server/fake_battle.json` und `dev_commands.json` (bzw. `dust_server/set_host_mode.py`)
 
 ## Netz

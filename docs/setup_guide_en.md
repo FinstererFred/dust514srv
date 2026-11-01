@@ -324,7 +324,11 @@ rpcs3 --no-gui <path to EBOOT.BIN> -- -autologinserver=<server>:8080 -autologinc
 - There are no bots: the release build of the game has no AI spawning. Every opponent is a player.
 - Characters are saved per RPCN account in `dust_server/state/dust.sqlite` (skills, skill points, inventory, fittings,
   ISK, match rewards). Back up that file. The server knows players only by their RPCN name, so a lost RPCN account
-  means lost characters.
+  means lost characters. It accepts a login only with a ticket signed by the official RPCN server (np.rpcs3.net), so
+  nobody can log in under someone else's RPCN name. Players on another RPCN server cannot log in unless that server
+  signs its tickets and the operator adds its public key (`DUST_TICKET_KEYS`, see `docker/README.md`).
+- The backend runs plain HTTP. A login ticket stays valid for about 15 minutes after it was issued, plus one hour of
+  tolerance, so do not run the backend over networks you do not trust.
 - Switching the game mode needs a host restart (about 100 seconds), and players have to rejoin.
 - Game modes: Ambush, Skirmish and Domination work. In Acquisition the spawn point is in a red zone, Ambush OMS is
   untested, and Planetary Conquest is not available.
