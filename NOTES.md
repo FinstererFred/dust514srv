@@ -585,6 +585,8 @@ Docker: `export_host_data.ps1` erneut ausführen, damit der Weltrendering-Patch 
   Optionen: (a) zwei Spieler über Typ 1 und Typ 2 (billig, aber nur 2); (b) den Rechteck-Test in `FUN_00823078`
   (Rechteck um den Punkt in Rasterkoordinaten, `FUN_008240e8` +0xf8..+0x104, Umrechnung `FUN_00823dd8`) durch „nah an
   irgendeinem Spieler“ ersetzen, analog zu den Höhlen 1 und 2. Das ist die eigentliche Lösung für 32 Spieler.
+  Gegenprobe 09:32 (Abbild `…_093211_live`): Tester auf dem Vulkan-Client bei (21599, -11866) hatte auf dem Host Kacheln von
+  16384, ein Fake-Client bei (30564, 17360) Kacheln von 2048. Kurz danach fiel der Tester an dieser Stelle durch.
 - Gibt es Grenzen im NetDriver oder in `sys_net`/RPCS3? Bis 5 Spieler keine.
 - Wie skaliert der Game-Thread (~11 ms/Tick bei 5 Spielern) mit aktiven Spielern und mit mehr als 5? Wie hält man den Host
   ohne VSync auf einem festen Takt (z. B. 30 oder 60), damit er nicht unnötig CPU verbrennt?
