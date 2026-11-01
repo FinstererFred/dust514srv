@@ -2,11 +2,18 @@
 
 Setup guide (server with Docker, client in RPCS3): [docs/setup_guide_en.md](docs/setup_guide_en.md)
 
-A private test server that gets the PS3 client of DUST 514 (NPUB30643, version 03.19) in RPCS3 back into
-the Mercenary Quarters. Not affiliated with CCP or Sony.
+A private server that makes the PS3 client of DUST 514 (NPUB30643, version 03.19) in RPCS3 playable again,
+including battles. Not affiliated with CCP or Sony.
 
-Status: login via RPCN, character selection, loading the character and the welcome screen work without the
-connection dropping. Battles (battle server) and saving changes are not available yet.
+Status:
+- **Backend:** login via RPCN, Mercenary Quarters, market, AUR and loyalty stores. Characters are saved per RPCN
+  account (skills, skill points, inventory, fittings, ISK, match rewards).
+- **Battles:** CCP's battle servers were never released, so an RPCS3 instance hosts the match as an Unreal Engine 3
+  listen server (in Docker without a GPU). Players join through the in-game battle finder. Ambush, Skirmish and
+  Domination work, including the end of the match with rewards and an automatic host restart.
+- **Tested** with up to five players (the host plus four clients); there are no bots, every opponent is a player.
+
+Known limitations are listed in the [setup guide](docs/setup_guide_en.md#current-limitations).
 
 ## Layout
 
@@ -82,7 +89,6 @@ works on Windows as well as in the Linux container.
   (on Windows `tools\restart_host.ps1` by default, which restarts only the host instance). The same mode
   (terraform, lighting, name …) is applied immediately as a map restart with *Save & apply*.
 - The client loads market, store and wallet once per login; it fetches changed documents at the next login.
-  Purchases are not saved yet.
 
 ## Notes
 
